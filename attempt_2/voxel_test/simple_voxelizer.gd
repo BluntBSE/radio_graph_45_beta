@@ -13,7 +13,9 @@ func _ready():
 
 func start_generation():
     #test_single_point()
+    diagnose_collision_setup()
     test_and_create_voxel_at_point()
+
     #generate_voxels_from_geometry()
     #display_voxels()
 
@@ -73,29 +75,30 @@ func point_inside_concave_mesh(world_pos: Vector3) -> bool:
     # Keep casting rays until we reach the end or no more intersections
     while current_start.distance_to(ray_end) > margin:
         var query = PhysicsRayQueryParameters3D.create(current_start, ray_end)
+        query.collision_mask = 0xFFFFFFFF  # Hit all collision layers
+        query.collide_with_areas = false
+        query.collide_with_bodies = true
+        
         var result = space_state.intersect_ray(query)
         
         if result.is_empty():
-            # No more intersections, we're done
             break
         
         # We found an intersection
         intersection_count += 1
         var hit_point = result["position"]
         
-        # Debug output
         print("Intersection ", intersection_count, " at: ", hit_point)
         
         # Set up next raycast starting just past this intersection
         current_start = hit_point + ray_direction * margin
         
         # Safety check to prevent infinite loops
-        if intersection_count > 100:  # Reasonable limit
+        if intersection_count > 100:
             print("Warning: Too many intersections, breaking")
             break
     
-    
-    
+    print("Point ", world_pos, " total intersections: ", intersection_count)
     # Count how many surfaces we hit
     return (intersection_count % 2) == 1  # Odd = inside
 
@@ -145,6 +148,8 @@ func display_voxels():
     print("Displayed ", displayed, " voxel cubes")
 
 
+
+
 # Add this function to create debug spheres
 func create_debug_sphere(position: Vector3, color: Color, size: float = 0.1) -> MeshInstance3D:
     var sphere_mesh = SphereMesh.new()
@@ -187,46 +192,77 @@ func test_single_point():
 
 
 # Add this function to test the specific point and create a voxel if inside
-# Add this function to test the specific point and create a voxel if inside
 func test_and_create_voxel_at_point():
     print("=== Testing point and creating voxel if inside ===")
-    var test_pos = Vector3(0.0, 0.5, 0.0)  # Same position as your green sphere
+    var test_pos = Vector3(-2.50, 0.5, 0.0)  # Green sphere position
     
-    # Just raycast from test_pos to the right 5 units, print the collision
-    print("=== Simple raycast debug ===")
-    var ray_end = test_pos
-    create_debug_sphere(ray_end, Color.GREEN, 0.05)
-    var ray_start = test_pos + Vector3(5.0, 0, 0)
+    # Set up ray from red to green sphere
+    var ray_start = test_pos + Vector3(5.0, 0, 0)  # Red sphere (start)
+    var ray_end = test_pos  # Green sphere (end)
+    var ray_direction = (ray_end - ray_start).normalized()
+    var ray_distance = ray_start.distance_to(ray_end)
+    var margin = 0.1
+    
+    # Create debug spheres for start and end
     create_debug_sphere(ray_start, Color.RED, 0.05)
-    var debug_query = PhysicsRayQueryParameters3D.create(ray_start, ray_end)
-    debug_query.collision_mask = 0xFFFFFFFF  # Hit all collision layers
-    debug_query.collide_with_areas = false
-    debug_query.collide_with_bodies = true
-    #debug_query.hit_from_inside = true
-    #debug_query.hit_back_faces = true
+    create_debug_sphere(ray_end, Color.GREEN, 0.05)
+    
+    print("=== Chained raycast debug from RED to GREEN ===")
+    print("Ray start: ", ray_start)
+    print("Ray end: ", ray_end)
+    print("Ray distance: ", ray_distance)
     
     var space_state = get_world_3d().direct_space_state
-    var debug_result = space_state.intersect_ray(debug_query)
+    var intersection_count = 0
+    var current_start = ray_start
+    var current_end = ray_end
     
-    if debug_result.is_empty():
-        print("DEBUG: No collision detected from ", ray_start, " to ", ray_end)
-        print("This means either:")
-        print("  1. No collision shapes in the scene")
-        print("  2. Collision shapes are on wrong layer") 
-        print("  3. Ray missed the collision shape")
-    else:
-        print("DEBUG: Hit detected!")
-        print("  Hit position: ", debug_result["position"])
-        print("  Hit object: ", debug_result.get("collider", "Unknown"))
-        if debug_result.has("collider"):
-            var hit_obj = debug_result["collider"]
-            print("  Object class: ", hit_obj.get_class())
-            print("  Object name: ", hit_obj.name)
+    # Keep casting rays until we reach the end or no more intersections
+    while current_start.distance_to(current_end) > margin:
+        var query = PhysicsRayQueryParameters3D.create(current_start, current_end)
+        query.collision_mask = 0xFFFFFFFF  # Hit all collision layers
+        query.collide_with_areas = true
+        query.collide_with_bodies = true
+        query.hit_back_faces = true
+        query.hit_from_inside = true
         
-        # Create a blue sphere at the hit point
-        create_debug_sphere(debug_result["position"], Color.BLUE, 0.03)
+        print("Casting ray from: ", current_start, " to: ", current_end)
+        print("  Distance remaining: ", current_start.distance_to(current_end))
+        
+        var result = space_state.intersect_ray(query)
+        
+        if result.is_empty():
+            print("No more intersections found, stopping")
+            break
+        
+        # We found an intersection
+        intersection_count += 1
+        var hit_point = result["position"]
+        var hit_object = result.get("collider", null)
+        var hit_normal = result.get("normal", Vector3.ZERO)
+        
+        print("Intersection ", intersection_count, " at: ", hit_point)
+        print("  Hit normal: ", hit_normal)
+        if hit_object:
+            print("  Hit object: ", hit_object.name)
+        
+        # Create BLUE sphere at every intersection point
+        create_debug_sphere(hit_point, Color.BLUE, 0.02)
+        
+        # Set up next raycast starting just past this intersection
+        # Use a tiny margin to ensure we get past the surface but don't overshoot
+        var new_start = hit_point + ray_direction * 0.01  # Much smaller margin
+        
+        print("  Next ray will start at: ", new_start)
+        current_start = new_start
+        
+        # Safety check to prevent infinite loops
+        if intersection_count > 100:
+            print("Warning: Too many intersections, breaking")
+            break
     
-    print("=== End simple raycast debug ===")
+    print("=== End chained raycast debug ===")
+    print("Total intersections found: ", intersection_count)
     
     # Test if point is inside using our ray-casting function
     var is_inside = point_inside_concave_mesh(test_pos)
@@ -262,3 +298,49 @@ func test_and_create_voxel_at_point():
         print("Point is outside - no voxel created")
     
     return is_inside
+
+
+# Add this function to diagnose collision setup issues
+func diagnose_collision_setup():
+    print("=== COLLISION SETUP DIAGNOSIS ===")
+    
+    # Find all physics bodies in the scene
+    var all_bodies = []
+    find_all_physics_bodies(get_tree().root, all_bodies)
+    
+    print("Found ", all_bodies.size(), " physics bodies:")
+    
+    for body in all_bodies:
+        print("\nBody: ", body.name, " (", body.get_class(), ")")
+        print("  Position: ", body.global_position)
+        print("  Collision layer: ", body.collision_layer)
+        print("  Collision mask: ", body.collision_mask)
+ 
+        
+        # Check collision shapes
+        var collision_shapes = []
+        find_collision_shapes(body, collision_shapes)
+        print("  Collision shapes: ", collision_shapes.size())
+        
+        for shape_node in collision_shapes:
+            print("    Shape node: ", shape_node.name)
+            print("    Shape disabled: ", shape_node.disabled)
+            print("    Shape resource: ", shape_node.shape)
+            if shape_node.shape:
+                print("    Shape type: ", shape_node.shape.get_class())
+    
+    print("=== END DIAGNOSIS ===")
+
+func find_all_physics_bodies(node: Node, body_list: Array):
+    if node is PhysicsBody3D:
+        body_list.append(node)
+    
+    for child in node.get_children():
+        find_all_physics_bodies(child, body_list)
+
+func find_collision_shapes(node: Node, shape_list: Array):
+    if node is CollisionShape3D:
+        shape_list.append(node)
+    
+    for child in node.get_children():
+        find_collision_shapes(child, shape_list)

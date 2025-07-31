@@ -1,0 +1,86 @@
+[gd_scene load_steps=6 format=3 uid="uid://bxql25yx4vqjh"]
+
+[ext_resource type="Script" path="res://winding_number_demo/winding_number_voxelizer.gd" id="1_q8ny5"]
+[ext_resource type="Script" path="res://winding_number_demo/demo_controller.gd" id="2_demo"]
+
+
+[sub_resource type="SphereMesh" id="SphereMesh_1g8wy"]
+radius = 2.0
+height = 4.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_1g8wy"]
+size = Vector3(3, 2, 4)
+
+[sub_resource type="Environment" id="Environment_1pqt4"]
+background_mode = 1
+background_color = Color(0.1, 0.1, 0.15, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.6, 0.8, 1)
+ambient_light_energy = 0.3
+
+[node name="WindingNumberDemo" type="Node3D"]
+script = ExtResource("1_q8ny5")
+voxel_resolution = 16
+show_debug_cubes = true
+
+[node name="DemoController" type="Node" parent="."]
+script = ExtResource("2_demo")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 15, 10, 15)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.408248, 0.57735, 0, 0.816497, 0.57735, -0.707107, -0.408248, 0.57735, 0, 8, 0)
+light_energy = 0.8
+
+[node name="TestMeshes" type="Node3D" parent="."]
+
+[node name="TestSphere" type="MeshInstance3D" parent="TestMeshes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 0, 0)
+mesh = SubResource("SphereMesh_1g8wy")
+
+[node name="TestBox" type="MeshInstance3D" parent="TestMeshes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, 0)
+mesh = SubResource("BoxMesh_1g8wy")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1pqt4")
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="InfoPanel" type="Panel" parent="UI"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -120.0
+offset_right = 400.0
+offset_bottom = -10.0
+modulate = Color(1, 1, 1, 0.8)
+
+[node name="InfoLabel" type="RichTextLabel" parent="UI/InfoPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+bbcode_enabled = true
+text = "[b]Winding Number Voxelizer Demo[/b]
+
+[color=cyan]Algorithm:[/color] Mathematical winding number
+[color=cyan]Reliability:[/color] 100% accurate for closed meshes
+[color=cyan]Performance:[/color] CPU-based, slower but precise
+
+Press [color=yellow]Space[/color] to re-voxelize
+Press [color=yellow]T[/color] to toggle cubes
+Press [color=yellow]1[/color] for sphere, [color=yellow]2[/color] for box"
+fit_content = true

@@ -11,7 +11,7 @@ func _ready() -> void:
         var collider: CollisionShape3D = mesh_instance.get_child(0).get_child(0)
         # Static body inbetween the two layers
         colliders_to_configure.append(collider)
-    create_accurate_collision_shape(%SkullCollisionShape, %b_skull.mesh)
+    #create_accurate_collision_shape(%SkullCollisionShape, %b_skull.mesh)
 
 
 func create_accurate_collision_shapes():

@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="RadioGraph-45-beta"
-config/features=PackedStringArray("4.5", "Forward Plus")
+config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
 
 [display]
 
 window/stretch/mode="viewport"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
