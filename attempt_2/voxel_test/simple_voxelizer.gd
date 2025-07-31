@@ -7,7 +7,8 @@ var voxels: Array[Vector3] = []
 
 func _ready():
     print("Starting voxel generation...")
-    call_deferred("start_generation")
+    #call_deferred("start_generation")
+    %CollisionConfigurator.collisions_generated.connect(start_generation)
 
 func start_generation():
     generate_voxels_from_geometry()
@@ -23,12 +24,10 @@ func generate_voxels_from_geometry():
     print("Found ", mesh_objects.size(), " mesh objects to voxelize")
     for obj in mesh_objects:
         print("Mesh object: ", obj.name, " at position: ", obj.global_position)
-        if obj.mesh and obj.mesh is SphereMesh:
-            var sphere = obj.mesh as SphereMesh
-            print("  Sphere radius: ", sphere.radius, " height: ", sphere.height)
+
     
     # Generate voxel grid
-    var steps = int(grid_bounds.x * 2 / voxel_size)
+    var steps = int(grid_bounds.x * 2 / voxel_size) #Why X2?
     print("Grid steps: ", steps, " (", steps*steps*steps, " total voxels to test)")
     print("Grid bounds: ", -grid_bounds, " to ", grid_bounds)
     print("Voxel size: ", voxel_size)
@@ -43,20 +42,25 @@ func generate_voxels_from_geometry():
                     -grid_bounds.z + z * voxel_size + voxel_size * 0.5
                 )
                 
-                # Debug some positions
-                if x == 0 and y == 0 and z < 3:
-                    print("Test position [", x, ",", y, ",", z, "] = ", world_pos)
-                
+
                 # Simple distance-based detection for now
                 var is_inside = false
-                for mesh_obj in mesh_objects:
-                    var distance = world_pos.distance_to(mesh_obj.global_position)
-                    # Use the sphere radius (2.0) plus a bit more
-                    if distance < 2.5:  # Sphere radius + some margin
-                        is_inside = true
-                        if voxel_count < 10:
-                            print("Voxel ", voxel_count, " at ", world_pos, " distance: ", distance, " from ", mesh_obj.global_position)
-                        break
+                
+                #by hand - physics query
+                var point_params := PhysicsPointQueryParameters3D.new()
+                point_params.position = world_pos
+                var state = get_world_3d().direct_space_state
+                is_inside = state.intersect_point(point_params)
+                
+    
+                #for mesh_obj in mesh_objects:
+                    #var distance = world_pos.distance_to(mesh_obj.global_position)
+                    ## Use the sphere radius (2.0) plus a bit more
+                    #if distance < 2.5:  # Sphere radius + some margin
+                        #is_inside = true
+                        #if voxel_count < 10:
+                            #print("Voxel ", voxel_count, " at ", world_pos, " distance: ", distance, " from ", mesh_obj.global_position)
+                        #break
                 
                 if is_inside:
                     voxels.append(world_pos)
@@ -94,7 +98,7 @@ func display_voxels():
         materials.append(material)
     
     var displayed = 0
-    for i in range(min(voxels.size(), 100)):  # Limit to 100 for now
+    for i in range(min(voxels.size(), 30000)):  # Limit to 100 for now
         var voxel_instance = MeshInstance3D.new()
         voxel_instance.name = "VoxelCube"  # Name them so we can skip them in mesh detection
         voxel_instance.mesh = cube_mesh

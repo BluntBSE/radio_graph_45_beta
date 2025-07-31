@@ -1,0 +1,244 @@
+[gd_scene load_steps=4 format=3 uid="uid://cirf3i3tjkgny"]
+
+[sub_resource type="GDScript" id="GDScript_s06ym"]
+script/source = "extends Node3D
+
+# Voxel to Texture3D converter - takes voxels and creates volume texture
+@export var voxel_size: float = 1.0
+@export var grid_bounds: Vector3 = Vector3(8, 8, 8)
+@export var texture_resolution: int = 64  # Texture3D resolution
+
+var voxels: Array[Vector3] = []
+var volume_texture: ImageTexture3D
+var volume_data: PackedByteArray
+
+func _ready():
+    print(\"Starting voxel to Texture3D conversion...\")
+    call_deferred(\"start_conversion\")
+
+func start_conversion():
+    print(\"=== STEP 1: Generate voxels ===\")
+    generate_voxels_from_geometry()
+    
+    print(\"=== STEP 2: Convert to Texture3D ===\")
+    convert_voxels_to_texture3d()
+    
+    print(\"=== STEP 3: Apply to volume renderer ===\")
+    setup_volume_renderer()
+
+func generate_voxels_from_geometry():
+    print(\"Generating voxels...\")
+    
+    # Find all MeshInstance3D nodes in the scene
+    var mesh_objects = []
+    find_mesh_instances(self, mesh_objects)
+    
+    print(\"Found \", mesh_objects.size(), \" mesh objects to voxelize\")
+    for obj in mesh_objects:
+        print(\"Mesh object: \", obj.name, \" at position: \", obj.global_position)
+        if obj.mesh and obj.mesh is SphereMesh:
+            var sphere = obj.mesh as SphereMesh
+            print(\"  Sphere radius: \", sphere.radius, \" height: \", sphere.height)
+    
+    # Generate voxel grid
+    var steps = int(grid_bounds.x * 2 / voxel_size)
+    print(\"Grid steps: \", steps, \" (\", steps*steps*steps, \" total voxels to test)\")
+    print(\"Grid bounds: \", -grid_bounds, \" to \", grid_bounds)
+    print(\"Voxel size: \", voxel_size)
+    
+    var voxel_count = 0
+    for x in range(steps):
+        for y in range(steps):
+            for z in range(steps):
+                var world_pos = Vector3(
+                    -grid_bounds.x + x * voxel_size + voxel_size * 0.5,
+                    -grid_bounds.y + y * voxel_size + voxel_size * 0.5,
+                    -grid_bounds.z + z * voxel_size + voxel_size * 0.5
+                )
+                
+                # Simple distance-based detection
+                var is_inside = false
+                for mesh_obj in mesh_objects:
+                    var distance = world_pos.distance_to(mesh_obj.global_position)
+                    if distance < 2.5:  # Sphere radius + margin
+                        is_inside = true
+                        break
+                
+                if is_inside:
+                    voxels.append(world_pos)
+                    voxel_count += 1
+    
+    print(\"Generated \", voxels.size(), \" voxels\")
+
+func find_mesh_instances(node: Node, mesh_list: Array):
+    if node is MeshInstance3D and node.name != \"VoxelCube\" and node.name != \"VolumeQuad\":
+        mesh_list.append(node)
+    
+    for child in node.get_children():
+        find_mesh_instances(child, mesh_list)
+
+func convert_voxels_to_texture3d():
+    print(\"Converting voxels to Texture3D...\")
+    print(\"Texture resolution: \", texture_resolution, \"x\", texture_resolution, \"x\", texture_resolution)
+    
+    # Initialize volume data (all zeros = empty space)
+    var total_voxels = texture_resolution * texture_resolution * texture_resolution
+    volume_data = PackedByteArray()
+    volume_data.resize(total_voxels)
+    volume_data.fill(0)  # Start with empty space
+    
+    # Map world space voxels to texture space
+    var texture_bounds = Vector3(texture_resolution, texture_resolution, texture_resolution)
+    var world_to_texture_scale = texture_bounds / (grid_bounds * 2.0)
+    
+    print(\"World to texture scale: \", world_to_texture_scale)
+    
+    var mapped_voxels = 0
+    for voxel_pos in voxels:
+        # Convert world position to texture coordinates
+        var texture_pos = (voxel_pos + grid_bounds) * world_to_texture_scale
+        
+        # Clamp to texture bounds
+        var tx = int(clamp(texture_pos.x, 0, texture_resolution - 1))
+        var ty = int(clamp(texture_pos.y, 0, texture_resolution - 1))
+        var tz = int(clamp(texture_pos.z, 0, texture_resolution - 1))
+        
+        # Calculate 1D index for 3D texture
+        var index = tx + ty * texture_resolution + tz * texture_resolution * texture_resolution
+        
+        if index >= 0 and index < volume_data.size():
+            volume_data[index] = 255  # Solid voxel
+            mapped_voxels += 1
+            
+            # Debug first few mappings
+            if mapped_voxels <= 5:
+                print(\"Voxel \", mapped_voxels, \": world \", voxel_pos, \" -> texture [\", tx, \",\", ty, \",\", tz, \"] index \", index)
+    
+    print(\"Mapped \", mapped_voxels, \" voxels to texture space\")
+    
+    # Create Texture3D from volume data
+    volume_texture = ImageTexture3D.new()
+    var images = []
+    
+    # Create 2D slices for the 3D texture
+    for z in range(texture_resolution):
+        var slice_data = PackedByteArray()
+        for y in range(texture_resolution):
+            for x in range(texture_resolution):
+                var index = x + y * texture_resolution + z * texture_resolution * texture_resolution
+                slice_data.append(volume_data[index])
+        
+        var slice_image = Image.create_from_data(
+            texture_resolution, 
+            texture_resolution, 
+            false, 
+            Image.FORMAT_R8, 
+            slice_data
+        )
+        images.append(slice_image)
+    
+    volume_texture.create(Image.FORMAT_R8, texture_resolution, texture_resolution, texture_resolution, false, images)
+    print(\"Created Texture3D successfully!\")
+    
+    # Save debug slices
+    save_debug_slices()
+
+func save_debug_slices():
+    print(\"Saving debug slices...\")
+    
+    # Save a few Z slices
+    var slice_indices = [16, 24, 32, 40, 48]
+    for z_slice in slice_indices:
+        var slice_data = PackedByteArray()
+        
+        for y in range(texture_resolution):
+            for x in range(texture_resolution):
+                var index = x + y * texture_resolution + z_slice * texture_resolution * texture_resolution
+                if index < volume_data.size():
+                    var density = volume_data[index]
+                    slice_data.append(density)  # R
+                    slice_data.append(density)  # G  
+                    slice_data.append(density)  # B
+                else:
+                    slice_data.append(0)
+                    slice_data.append(0)
+                    slice_data.append(0)
+        
+        var slice_image = Image.create_from_data(texture_resolution, texture_resolution, false, Image.FORMAT_RGB8, slice_data)
+        var filename = \"res://texture3d_slice_Z\" + str(z_slice) + \".png\"
+        slice_image.save_png(filename)
+        print(\"Saved slice \", z_slice, \" to \", filename)
+
+func setup_volume_renderer():
+    print(\"Setting up volume renderer...\")
+    
+    # Get the existing nodes from the scene
+    var sub_viewport = $VolumeViewport as SubViewport
+    var slave_camera = $VolumeViewport/SlaveCamera as Camera3D
+    var texture_rect = %VolumeDisplay as TextureRect
+    
+    if not sub_viewport or not slave_camera or not texture_rect:
+        print(\"ERROR: Volume rendering nodes not found in scene!\")
+        return
+    
+    # Sync slave camera with main camera
+    var main_camera = $Camera3D as Camera3D
+    if main_camera and slave_camera:
+        slave_camera.transform = main_camera.transform
+        slave_camera.fov = main_camera.fov
+        print(\"Synced slave camera with main camera\")
+    
+    # Create volume rendering material with canvas shader
+    var volume_material = ShaderMaterial.new()
+    var volume_shader = load(\"res://attempt_2/voxel_texture3d/volume_render.gdshader\") as Shader
+    
+    if volume_shader:
+        volume_material.shader = volume_shader
+        volume_material.set_shader_parameter(\"volume_texture\", volume_texture)
+        volume_material.set_shader_parameter(\"volume_min\", -grid_bounds)
+        volume_material.set_shader_parameter(\"volume_max\", grid_bounds)
+        
+        # Apply shader to TextureRect
+        texture_rect.material = volume_material
+        
+        print(\"Volume renderer applied to TextureRect!\")
+        print(\"SubViewport size: \", sub_viewport.size)
+        print(\"TextureRect anchors: \", texture_rect.anchor_left, \",\", texture_rect.anchor_top, \" to \", texture_rect.anchor_right, \",\", texture_rect.anchor_bottom)
+    else:
+        print(\"ERROR: Could not load volume_render.gdshader\")
+"
+
+[sub_resource type="Environment" id="Environment_67890"]
+background_mode = 1
+background_color = Color(0.1, 0.1, 0.2, 1)
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_8oa5m"]
+viewport_path = NodePath("VolumeViewport")
+
+[node name="VoxelTexture3DTest" type="Node3D"]
+script = SubResource("GDScript_s06ym")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7071068, 0.7071068, 0, -0.7071068, 0.7071068, 0, 7.9167023, 12)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_67890")
+
+[node name="VolumeViewport" type="SubViewport" parent="."]
+size = Vector2i(800, 600)
+render_target_update_mode = 1
+
+[node name="SlaveCamera" type="Camera3D" parent="VolumeViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.7071068, 0.7071068, 0, -0.7071068, 0.7071068, 0, 7.9167023, 12)
+
+[node name="VolumeDisplay" type="TextureRect" parent="."]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = SubResource("ViewportTexture_8oa5m")
