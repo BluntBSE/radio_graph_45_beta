@@ -2,8 +2,9 @@ shader_type spatial;
 render_mode blend_mix, depth_draw_never, unshaded;
 
 uniform sampler2D SCREEN_TEXTURE: hint_screen_texture, filter_linear;
-uniform vec3 sphere_center = vec3(0.0, 0.0, -2.0);
-uniform float sphere_radius = 1.0;
+uniform sampler3D volume_texture: filter_linear;
+uniform vec3 volume_min = vec3(-10.0, -10.0, -10.0);
+uniform vec3 volume_max = vec3(10.0, 10.0, 10.0);
 uniform int max_steps = 64;
 uniform float max_distance = 100.0;
 uniform float step_size = 0.1;
@@ -19,9 +20,22 @@ void vertex() {
     camera_position = CAMERA_POSITION_WORLD;
 }
 
-// SDF for a sphere - returns distance to surface
-float sdf_sphere(vec3 pos, vec3 center, float radius) {
-    return length(pos - center) - radius;
+// Convert world position to normalized texture coordinates (0-1)
+vec3 world_to_texture_coords(vec3 world_pos) {
+    return (world_pos - volume_min) / (volume_max - volume_min);
+}
+
+// Sample voxel density at world position
+float sample_voxel_density(vec3 world_pos) {
+    vec3 tex_coords = world_to_texture_coords(world_pos);
+
+    // Check if we're outside the volume bounds
+    if (any(lessThan(tex_coords, vec3(0.0))) || any(greaterThan(tex_coords, vec3(1.0)))) {
+        return 0.0;
+    }
+
+    // Sample the 3D texture (R8 format, so density is in the red channel)
+    return texture(volume_texture, tex_coords).r;
 }
 
 void fragment() {
@@ -34,18 +48,14 @@ void fragment() {
 
     // Raymarching loop
     for (int i = 0; i < max_steps; i++) {
-        // ===== REPLACE THIS SECTION WITH VOXEL SAMPLING =====
-        // Currently using SDF sphere distance
-        float dist = sdf_sphere(ray_pos, sphere_center, sphere_radius);
+        // Sample voxel density at current ray position
+        float density = sample_voxel_density(ray_pos);
 
-        // If we're inside the sphere (distance < 0), accumulate density
-        if (dist < 0.0) {
-            // Convert distance to density (closer to center = higher density)
-            float density = 1.0 - (abs(dist) / sphere_radius);
+        // If there's material at this position, accumulate density
+        if (density > 0.0) {
             total_density += density * step_size;
             hit_something = true;
         }
-        // ===== END REPLACE SECTION =====
 
         // Move ray forward
         ray_pos += ray_dir * step_size;
@@ -58,8 +68,9 @@ void fragment() {
 
     // Visualization: white = no material, darker = more material
     if (hit_something) {
-        float absorption = total_density * 0.95; // Adjust for darkness level
-        float brightness = exp(-absorption);
+        float absorption = total_density * 0.8; // Adjust for darkness level
+        //float brightness = exp(-absorption);
+        float brightness = absorption;
         ALBEDO = vec3(brightness, brightness, brightness);
     } else {
         ALBEDO = vec3(1.0, 1.0, 1.0); // White background

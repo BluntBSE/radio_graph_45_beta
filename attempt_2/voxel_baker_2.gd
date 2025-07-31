@@ -126,7 +126,7 @@ func point_inside_mesh(mesh_instance: MeshInstance3D, world_point: Vector3) -> b
     if world_point.distance_to(Vector3.ZERO) < 0.5:
         if result.is_empty():
             print("No ray intersections found - using AABB result only")
-            return true
+            #return true #CLAUDE - Is this correct? It might be!
         else:
             print("Ray hit: ", result.collider.name if result.has("collider") else "unknown")
     
@@ -134,8 +134,9 @@ func point_inside_mesh(mesh_instance: MeshInstance3D, world_point: Vector3) -> b
         iterations += 1
         
         # Check if this collision is with any child of this VoxelBaker
+        #CLAUDE - Added double parentage. 
         var collider = result.collider
-        if collider and collider.get_parent() == self:
+        if collider and collider.get_parent().get_parent() == self:
             intersection_count += 1
         
         # Continue ray from intersection point
