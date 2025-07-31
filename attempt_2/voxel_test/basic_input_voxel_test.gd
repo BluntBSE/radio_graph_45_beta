@@ -18,3 +18,5 @@ func _input(event):
             print("G!")
         if event.keycode == KEY_Z:
             %CollisionConfigurator.create_accurate_collision_shapes()
+        if event.keycode == KEY_T:
+            get_parent().start_generation()
