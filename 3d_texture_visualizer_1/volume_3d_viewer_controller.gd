@@ -97,10 +97,7 @@ func _input(event):
         camera_3d.rotation.y = rotation_y
 
 func _process(delta):
-    if not mouse_captured:
-        return
-        
-    # Handle WASD movement
+    # Handle WASD movement (works whether mouse is captured or not)
     var input_vector = Vector3()
     
     # Get input for WASD keys
