@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3 uid="uid://dh1t6fr2qbjpw"]
+
+[ext_resource type="Script" uid="uid://bxptw60nfk06h" path="res://basis/basis_camera_controller.gd" id="1_8chc6"]
+
+[sub_resource type="PrismMesh" id="PrismMesh_nokww"]
+
+[sub_resource type="QuadMesh" id="QuadMesh_o6aa0"]
+
+[node name="Node3D" type="Node3D"]
+
+[node name="TestPrism1" type="MeshInstance3D" parent="."]
+mesh = SubResource("PrismMesh_nokww")
+
+[node name="TestPrism2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.73025763, -0.6831718, 0, 0.6831718, 0.73025763, 0, 0, -1.5121037)
+mesh = SubResource("PrismMesh_nokww")
+
+[node name="MainCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.88699496)
+script = ExtResource("1_8chc6")
+
+[node name="XRayLens" type="MeshInstance3D" parent="MainCamera"]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.13101637)
+mesh = SubResource("QuadMesh_o6aa0")

@@ -1,0 +1,40 @@
+[gd_scene load_steps=8 format=3 uid="uid://bb1retptm0ot0"]
+
+[ext_resource type="Script" uid="uid://bxptywnqrhad3" path="res://attempt_2/camera_controller_2.gd" id="1_7jyeu"]
+[ext_resource type="Script" uid="uid://ch4npdapew2um" path="res://attempt_2/voxelizable_mesh_2.gd" id="2_cxwj5"]
+[ext_resource type="Shader" uid="uid://1n75cbl36gl3" path="res://attempt_2/xray_lens_2.gdshader" id="2_fufp3"]
+[ext_resource type="Script" uid="uid://r3mw8oenir07" path="res://attempt_2/voxel_baker_2.gd" id="3_fufp3"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_jjx3m"]
+render_priority = 0
+shader = ExtResource("2_fufp3")
+shader_parameter/sphere_center = Vector3(0, 0, -2)
+shader_parameter/sphere_radius = 1.0
+shader_parameter/max_steps = 64
+shader_parameter/max_distance = 100.0
+shader_parameter/step_size = 0.1
+
+[sub_resource type="QuadMesh" id="QuadMesh_7jyeu"]
+
+[sub_resource type="PrismMesh" id="PrismMesh_7jyeu"]
+
+[node name="Attempt2" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.2336106)
+far = 100.0
+script = ExtResource("1_7jyeu")
+
+[node name="XrayLens" type="MeshInstance3D" parent="Camera3D"]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.06288791)
+material_override = SubResource("ShaderMaterial_jjx3m")
+mesh = SubResource("QuadMesh_7jyeu")
+
+[node name="VoxelBaker" type="Node3D" parent="."]
+script = ExtResource("3_fufp3")
+
+[node name="FirstPrism" type="MeshInstance3D" parent="VoxelBaker"]
+mesh = SubResource("PrismMesh_7jyeu")
+skeleton = NodePath("../..")
+script = ExtResource("2_cxwj5")
