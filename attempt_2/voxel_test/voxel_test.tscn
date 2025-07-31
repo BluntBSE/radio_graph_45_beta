@@ -1,0 +1,32 @@
+[gd_scene load_steps=4 format=3 uid="uid://bvfjtxcvuqk8h"]
+
+[ext_resource type="Script" path="res://attempt_2/voxel_test/simple_voxelizer.gd" id="1_ktyfj"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_11111"]
+transparency = 1
+albedo_color = Color(0, 1, 1, 0.3)
+shading_mode = 0
+
+[sub_resource type="SphereMesh" id="SphereMesh_12345"]
+radius = 2.0
+height = 4.0
+
+[sub_resource type="Environment" id="Environment_67890"]
+background_mode = 1
+background_color = Color(0.2, 0.2, 0.3, 1)
+
+[node name="VoxelTest" type="Node3D"]
+script = ExtResource("1_ktyfj")
+
+[node name="TestMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("SphereMesh_12345")
+material_override = SubResource("StandardMaterial3D_11111")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 8)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_67890")

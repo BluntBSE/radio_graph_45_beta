@@ -1,9 +1,11 @@
-[gd_scene load_steps=9 format=3 uid="uid://bb1retptm0ot0"]
+[gd_scene load_steps=13 format=3 uid="uid://bb1retptm0ot0"]
 
 [ext_resource type="Script" uid="uid://bxptywnqrhad3" path="res://attempt_2/camera_controller_2.gd" id="1_7jyeu"]
 [ext_resource type="Script" uid="uid://ch4npdapew2um" path="res://attempt_2/voxelizable_mesh_2.gd" id="2_cxwj5"]
 [ext_resource type="Shader" uid="uid://1n75cbl36gl3" path="res://attempt_2/xray_lens_2.gdshader" id="2_fufp3"]
+[ext_resource type="Shader" uid="uid://dtniq7djlk5gd" path="res://attempt_2/voxel_display.gdshader" id="3_aalo8"]
 [ext_resource type="Script" uid="uid://r3mw8oenir07" path="res://attempt_2/voxel_baker_2.gd" id="3_fufp3"]
+[ext_resource type="Script" uid="uid://vx2upgijjg7u" path="res://attempt_2/voxel_display.gd" id="4_j4fds"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jjx3m"]
 render_priority = 0
@@ -11,38 +13,69 @@ shader = ExtResource("2_fufp3")
 shader_parameter/volume_min = Vector3(-10, -10, -10)
 shader_parameter/volume_max = Vector3(10, 10, 10)
 shader_parameter/max_steps = 64
-shader_parameter/max_distance = 100.0
 shader_parameter/step_size = 0.1
 
 [sub_resource type="QuadMesh" id="QuadMesh_7jyeu"]
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_kk2jj"]
+shader = ExtResource("3_aalo8")
+shader_parameter/volume_min = Vector3(-10, -10, -10)
+shader_parameter/volume_max = Vector3(10, 10, 10)
+shader_parameter/camera_position = Vector3(0, 0, 0)
+shader_parameter/camera_transform = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+shader_parameter/camera_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+shader_parameter/max_steps = 100
+shader_parameter/step_size = 0.2
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_fufp3"]
+viewport_path = NodePath("SubViewport")
+
 [sub_resource type="PrismMesh" id="PrismMesh_7jyeu"]
 
-[sub_resource type="ConcavePolygonShape3D" id="ConcavePolygonShape3D_fufp3"]
-data = PackedVector3Array(0, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0, 0.5, 0.5, 0, 0.5, -0.5, 0.5, -0.5, 0.5, 0, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, -0.5, -0.5, -0.5, 0, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5)
+[sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_fufp3"]
+points = PackedVector3Array(-0.5, -0.5, -0.5, 0.014651676, 0.47069666, 0.47069666, 0.073521286, 0.35295743, 0.47060993, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.014651676, 0.47069666, -0.47069666, 0.5, -0.5, 0.5, -0.014651676, 0.47069666, 0.47069666, 0.014651676, 0.47069666, -0.47069666)
 
 [node name="Attempt2" type="Node3D"]
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." node_paths=PackedStringArray("slave_camera")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.2336106)
 far = 100.0
 script = ExtResource("1_7jyeu")
+slave_camera = NodePath("../SubViewport/Camera3D")
 
 [node name="XRayLens" type="MeshInstance3D" parent="Camera3D"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.06288791)
+visible = false
 material_override = SubResource("ShaderMaterial_jjx3m")
 mesh = SubResource("QuadMesh_7jyeu")
 
-[node name="VoxelBaker" type="Node3D" parent="."]
+[node name="VoxelDisplay" type="TextureRect" parent="."]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_kk2jj")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = SubResource("ViewportTexture_fufp3")
+stretch_mode = 6
+script = ExtResource("4_j4fds")
+
+[node name="SubViewport" type="SubViewport" parent="."]
+handle_input_locally = false
+
+[node name="Camera3D" type="Camera3D" parent="SubViewport"]
+
+[node name="VoxelBaker" type="Node3D" parent="SubViewport"]
 script = ExtResource("3_fufp3")
 
-[node name="FirstPrism" type="MeshInstance3D" parent="VoxelBaker"]
+[node name="FirstPrism" type="MeshInstance3D" parent="SubViewport/VoxelBaker"]
 mesh = SubResource("PrismMesh_7jyeu")
-skeleton = NodePath("../..")
+skeleton = NodePath("../../..")
 script = ExtResource("2_cxwj5")
 
-[node name="StaticBody3D" type="StaticBody3D" parent="VoxelBaker/FirstPrism"]
+[node name="StaticBody3D" type="StaticBody3D" parent="SubViewport/VoxelBaker/FirstPrism"]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="VoxelBaker/FirstPrism/StaticBody3D"]
-shape = SubResource("ConcavePolygonShape3D_fufp3")
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SubViewport/VoxelBaker/FirstPrism/StaticBody3D"]
+shape = SubResource("ConvexPolygonShape3D_fufp3")
