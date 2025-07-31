@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3 uid="uid://dqj3peasvlhnm"]
+
+[ext_resource type="Script" uid="uid://dddaahsir86e2" path="res://3d_texture_visualizer_1/camera_controller_3dtex.gd" id="1_81ex2"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_81ex2"]
+
+[node name="3DTextureViewer" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.4701)
+script = ExtResource("1_81ex2")
+
+[node name="ReferenceCube" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+mesh = SubResource("BoxMesh_81ex2")
+
+[node name="TextureViewOutput" type="ColorRect" parent="."]
+visible = false
+offset_right = 1151.0
+offset_bottom = 647.0
+
+[node name="Node3D" type="Node3D" parent="."]

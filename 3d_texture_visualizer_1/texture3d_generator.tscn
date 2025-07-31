@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dhb3bl3cptceo"]
+
+[ext_resource type="Script" uid="uid://cvhd6ab3ghdac" path="res://3d_texture_visualizer_1/texture3d_generator.gd" id="1_1j8kl"]
+
+[node name="Texture3DGenerator" type="Node"]
+script = ExtResource("1_1j8kl")

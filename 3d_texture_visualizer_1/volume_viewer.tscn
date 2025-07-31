@@ -1,0 +1,101 @@
+[gd_scene load_steps=6 format=3 uid="uid://dth8mpnqayfv5"]
+
+[ext_resource type="Script" uid="uid://ncgr6ofuuf3u" path="res://3d_texture_visualizer_1/volume_viewer_controller.gd" id="1_viewer"]
+[ext_resource type="Shader" uid="uid://b1t087molcvy2" path="res://3d_texture_visualizer_1/volume_slice_shader.gdshader" id="2_slice_shader"]
+[ext_resource type="Shader" uid="uid://xlnkdqo76ta8" path="res://3d_texture_visualizer_1/volume_xray_shader.gdshader" id="3_xray_shader"]
+
+[sub_resource type="ShaderMaterial" id="slice_material"]
+shader = ExtResource("2_slice_shader")
+shader_parameter/slice_depth = 0.5
+shader_parameter/slice_axis = 2
+shader_parameter/brightness = 1.0
+shader_parameter/contrast = 1.0
+
+[sub_resource type="ShaderMaterial" id="xray_material"]
+shader = ExtResource("3_xray_shader")
+
+[node name="VolumeViewer" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_viewer")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "3D Texture Volume Viewer"
+horizontal_alignment = 1
+
+[node name="ViewerContainer" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SliceViewer" type="ColorRect" parent="VBoxContainer/ViewerContainer"]
+material = SubResource("slice_material")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="XRayViewer" type="ColorRect" parent="VBoxContainer/ViewerContainer"]
+visible = false
+material = SubResource("xray_material")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Controls" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="ModeControls" type="HBoxContainer" parent="VBoxContainer/Controls"]
+layout_mode = 2
+
+[node name="ModeLabel" type="Label" parent="VBoxContainer/Controls/ModeControls"]
+layout_mode = 2
+text = "View Mode:"
+
+[node name="ModeTabs" type="TabBar" parent="VBoxContainer/Controls/ModeControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SliceControls" type="HBoxContainer" parent="VBoxContainer/Controls"]
+layout_mode = 2
+
+[node name="SliceLabel" type="Label" parent="VBoxContainer/Controls/SliceControls"]
+layout_mode = 2
+text = "Slice:"
+
+[node name="SliceSlider" type="HSlider" parent="VBoxContainer/Controls/SliceControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AxisLabel" type="Label" parent="VBoxContainer/Controls/SliceControls"]
+layout_mode = 2
+text = "Axis:"
+
+[node name="AxisOptions" type="OptionButton" parent="VBoxContainer/Controls/SliceControls"]
+layout_mode = 2
+
+[node name="Instructions" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Instructions:
+1. First run texture3d_generator.tscn to create the 3D texture
+2. Use the slider to navigate through slices
+3. Switch between Slice View and X-Ray View
+4. Change slice axis to view different cross-sections"
+autowrap_mode = 2

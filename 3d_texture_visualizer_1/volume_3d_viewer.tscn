@@ -1,0 +1,45 @@
+[gd_scene load_steps=3 format=3 uid="uid://b1pjrpiec08nj"]
+
+[ext_resource type="Script" uid="uid://cc5kw5y6f5npl" path="res://3d_texture_visualizer_1/volume_3d_viewer_controller.gd" id="1_controller"]
+[ext_resource type="Script" uid="uid://jf74gi6c0wta" path="res://3d_texture_visualizer_1/volume_3d_ui_overlay.gd" id="2_ui_overlay"]
+
+[node name="Volume3DViewer" type="Node3D"]
+script = ExtResource("1_controller")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+
+[node name="VolumeMesh" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+
+[node name="UIOverlay" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_ui_overlay")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UIOverlay"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -200.0
+offset_right = 400.0
+offset_bottom = -10.0
+grow_vertical = 0
+
+[node name="Instructions" type="Label" parent="UIOverlay/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 0.8)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+autowrap_mode = 2
+
+[node name="Parameters" type="VBoxContainer" parent="UIOverlay/VBoxContainer"]
+layout_mode = 2
