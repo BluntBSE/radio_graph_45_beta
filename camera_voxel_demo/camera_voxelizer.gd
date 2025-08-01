@@ -24,7 +24,7 @@ func setup_camera():
     # Create main scene camera
     camera = Camera3D.new()
     camera.name = "SceneCamera"
-    camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+
     # Load camera controller if available
     var controller_script = load("res://attempt_2/winding_number_demo/camera_controller.gd")
     if controller_script:
@@ -161,7 +161,19 @@ func voxelize_mesh_camera_based(mesh_instance: MeshInstance3D) -> ImageTexture3D
     var padding = mesh_bounds.size * 0.1
     mesh_bounds = mesh_bounds.grow(padding.length())
     
-    print("Voxel bounds: ", mesh_bounds)
+    # FORCE CUBIC BOUNDS: Make all dimensions equal to the largest dimension
+    # This ensures consistent voxel step size across all axes
+    var max_dimension = max(mesh_bounds.size.x, max(mesh_bounds.size.y, mesh_bounds.size.z))
+    var center = mesh_bounds.get_center()
+    var half_cube = max_dimension * 0.5
+    
+    mesh_bounds = AABB(
+        Vector3(center.x - half_cube, center.y - half_cube, center.z - half_cube),
+        Vector3(max_dimension, max_dimension, max_dimension)
+    )
+    
+    print("Original bounds adjusted to cubic bounds: ", mesh_bounds)
+    print("Cubic voxel size: ", max_dimension / voxel_resolution)
     
     # Clone mesh to viewport for rendering
     var viewport_mesh = MeshInstance3D.new()
@@ -170,67 +182,167 @@ func voxelize_mesh_camera_based(mesh_instance: MeshInstance3D) -> ImageTexture3D
     viewport_mesh.global_transform = mesh_instance.global_transform
     viewport_renderer.add_child(viewport_mesh)
     
-    # Setup camera for slice capture  
-    var voxel_slice_thickness = mesh_bounds.size.z / voxel_resolution
-    setup_slice_camera(mesh_bounds, voxel_slice_thickness)
+    print("=== DUAL-AXIS VOXELIZATION ===")
+    print("Performing Z-axis pass...")
     
-    print("Voxel slice thickness: ", voxel_slice_thickness)
-    print("Camera near: ", slice_camera.near, ", far: ", slice_camera.far)
-    print("Camera depth of field: ", slice_camera.far - slice_camera.near)
+    # Z-AXIS PASS (original approach)
+    var z_voxel_data = await capture_axis_slices("Z")
     
-    # Generate slices by panning camera through Z positions
+    print("Performing Y-axis pass...")
+    
+    # Y-AXIS PASS (new approach for missing surfaces)
+    var y_voxel_data = await capture_axis_slices("Y")
+    
+    print("Combining Z and Y axis data...")
+    
+    # Combine both passes using OR operation
+    var combined_data = combine_voxel_data(z_voxel_data, y_voxel_data)
+    
+    # Clean up
+    viewport_mesh.queue_free()
+    
+    # Create final 3D texture from combined data
     var slice_images = []
-    
-    print("Capturing ", voxel_resolution, " slices...")
-    print("Torus center should be at Z=", mesh_bounds.get_center().z)
-    
-    for z_slice in range(voxel_resolution):
-        # Calculate world Z position for this slice
-        var z_progress = float(z_slice) / voxel_resolution
-        var world_z = mesh_bounds.position.z + z_progress * mesh_bounds.size.z
+    for z in range(voxel_resolution):
+        var slice_data = PackedByteArray()
+        slice_data.resize(voxel_resolution * voxel_resolution)
         
-        # Position camera to look AT this specific slice only
-        # Camera must be positioned exactly one slice thickness away
-        var camera_distance = slice_camera.near + voxel_slice_thickness * 0.5
+        for y in range(voxel_resolution):
+            for x in range(voxel_resolution):
+                var voxel_index = x + y * voxel_resolution + z * voxel_resolution * voxel_resolution
+                slice_data[x + y * voxel_resolution] = combined_data[voxel_index]
         
-        slice_camera.position = Vector3(
-            mesh_bounds.get_center().x,
-            mesh_bounds.get_center().y,  
-            world_z + camera_distance  # Positioned for thin slice capture
-        )
-        slice_camera.look_at(Vector3(
-            mesh_bounds.get_center().x,
-            mesh_bounds.get_center().y,
-            world_z
-        ), Vector3.UP)
+        var slice_image = Image.create_from_data(voxel_resolution, voxel_resolution, false, Image.FORMAT_R8, slice_data)
+        slice_images.append(slice_image)
+    
+    # Store slices for debugging
+    texture_slices = slice_images.duplicate()
+    
+    var texture3d = ImageTexture3D.new()
+    texture3d.create(Image.FORMAT_R8, voxel_resolution, voxel_resolution, voxel_resolution, false, slice_images)
+    
+    print("Dual-axis camera voxelization complete!")
+    return texture3d
+
+func capture_axis_slices(axis: String) -> PackedByteArray:
+    var voxel_data = PackedByteArray()
+    voxel_data.resize(voxel_resolution * voxel_resolution * voxel_resolution)
+    voxel_data.fill(0)
+    
+    # Use SAME slice thickness for both axes since we're using cubic bounds
+    var slice_thickness = mesh_bounds.size.x / voxel_resolution  # All dimensions are equal now
+    
+    setup_slice_camera_for_axis(mesh_bounds, slice_thickness, axis)
+    
+    print("Capturing ", voxel_resolution, " slices along ", axis, "-axis...")
+    
+    for slice_index in range(voxel_resolution):
+        # Calculate world position for this slice
+        var slice_progress = float(slice_index) / voxel_resolution
+        var world_pos = Vector3()
+        var look_target = Vector3()
+        var camera_distance = slice_camera.near + slice_thickness * 0.5
+        
+        if axis == "Z":
+            var world_z = mesh_bounds.position.z + slice_progress * mesh_bounds.size.z
+            slice_camera.position = Vector3(
+                mesh_bounds.get_center().x,
+                mesh_bounds.get_center().y,  
+                world_z + camera_distance
+            )
+            slice_camera.look_at(Vector3(
+                mesh_bounds.get_center().x,
+                mesh_bounds.get_center().y,
+                world_z
+            ), Vector3.UP)
+            
+        elif axis == "Y":
+            var world_y = mesh_bounds.position.y + slice_progress * mesh_bounds.size.y
+            slice_camera.position = Vector3(
+                mesh_bounds.get_center().x,
+                world_y + camera_distance,
+                mesh_bounds.get_center().z
+            )
+            slice_camera.look_at(Vector3(
+                mesh_bounds.get_center().x,
+                world_y,
+                mesh_bounds.get_center().z
+            ), Vector3.FORWARD)  # Different up vector for Y-axis
         
         # Wait for rendering
         await get_tree().process_frame
         await RenderingServer.frame_post_draw
         
-        # Capture and process this slice
-        var slice_image = capture_and_fill_slice()
-        slice_images.append(slice_image)
+        # Capture slice image
+        var viewport_texture = viewport_renderer.get_texture()
+        var raw_image = viewport_texture.get_image()
+        var slice_image = fill_slice_interior(raw_image)
+        var slice_data = slice_image.get_data()
         
-        if z_slice % 8 == 0:  # More frequent progress updates
-            print("Captured slice ", z_slice, " / ", voxel_resolution, " at Z=", world_z)
-            # Debug specific slices around center
-            var center_slice = voxel_resolution / 2
-            if abs(z_slice - center_slice) <= 2:
-                print("  -> Center slice area, should show torus hole if present")
+        # Store in 3D voxel array
+        for y in range(voxel_resolution):
+            for x in range(voxel_resolution):
+                var pixel_value = slice_data[x + y * voxel_resolution]
+                
+                # Map 2D slice coordinates to 3D voxel coordinates based on axis
+                var voxel_x
+                var voxel_y
+                var voxel_z
+                if axis == "Z":
+                    voxel_x = x
+                    voxel_y = y
+                    voxel_z = slice_index
+                elif axis == "Y":
+                    voxel_x = x
+                    voxel_y = slice_index
+                    voxel_z = y
+                
+                var voxel_index = voxel_x + voxel_y * voxel_resolution + voxel_z * voxel_resolution * voxel_resolution
+                voxel_data[voxel_index] = pixel_value
+        
+        if slice_index % 8 == 0:
+            print("Captured ", axis, "-axis slice ", slice_index, " / ", voxel_resolution)
     
-    # Store slices for debugging
-    texture_slices = slice_images.duplicate()
+    return voxel_data
+
+func setup_slice_camera_for_axis(bounds: AABB, slice_thickness: float, axis: String):
+    slice_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
     
-    # Clean up
-    viewport_mesh.queue_free()
+    # Since bounds are now cubic, all dimensions are equal
+    # Use the same camera size for both axes
+    slice_camera.size = bounds.size.x * 1.2  # All dimensions are equal
     
-    # Create 3D texture
-    var texture3d = ImageTexture3D.new()
-    texture3d.create(Image.FORMAT_R8, voxel_resolution, voxel_resolution, voxel_resolution, false, slice_images)
+    # Set near/far for thin slice capture
+    slice_camera.near = 0.1
+    slice_camera.far = slice_camera.near + slice_thickness * 1.1
     
-    print("Camera-based voxelization complete!")
-    return texture3d
+
+
+func combine_voxel_data(z_data: PackedByteArray, y_data: PackedByteArray) -> PackedByteArray:
+    var combined = PackedByteArray()
+    combined.resize(voxel_resolution * voxel_resolution * voxel_resolution)
+    
+    for i in range(combined.size()):
+        # OR operation: voxel is filled if it's filled in EITHER pass
+        combined[i] = max(z_data[i], y_data[i])
+    
+    var z_count = 0
+    var y_count = 0
+    var combined_count = 0
+    
+    for i in range(combined.size()):
+        if z_data[i] > 0:
+            z_count += 1
+        if y_data[i] > 0:
+            y_count += 1
+        if combined[i] > 0:
+            combined_count += 1
+    
+    print("Z-axis captured: ", z_count, " voxels")
+    print("Y-axis captured: ", y_count, " voxels") 
+    print("Combined total: ", combined_count, " voxels")
+    
+    return combined
 
 func setup_slice_camera(bounds: AABB, slice_thickness: float):
     # Setup orthogonal camera to capture cross-sections

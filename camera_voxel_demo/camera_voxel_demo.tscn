@@ -40,5 +40,6 @@ text = "Camera-Based Voxelizer Demo
 - Purple cubes show resulting voxel data"
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+visible = false
 material_override = SubResource("StandardMaterial3D_211hu")
 mesh = SubResource("TorusMesh_rjmbp")
