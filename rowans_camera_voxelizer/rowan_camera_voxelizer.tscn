@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://l1hmp0g1pyl2"]
+
+[ext_resource type="Script" uid="uid://dsfhdmg5soe7s" path="res://rowans_camera_voxelizer/camera_controller.gd" id="1_wwqpy"]
+
+[node name="RowanCameraVoxelizer" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+script = ExtResource("1_wwqpy")

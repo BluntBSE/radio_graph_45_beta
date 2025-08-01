@@ -1,0 +1,80 @@
+[gd_scene load_steps=4 format=3 uid="uid://bw7x6v4ucdaj8"]
+
+[ext_resource type="Script" path="res://camera_voxel_demo/camera_voxelizer.gd" id="1_n7ghy"]
+[ext_resource type="Script" path="res://attempt_2/winding_number_demo/camera_controller.gd" id="2_xm8j4"]
+
+[sub_resource type="TorusMesh" id="TorusMesh_1qxrn"]
+inner_radius = 0.4
+outer_radius = 1.0
+
+[node name="CameraVoxelAssignedMeshDemo" type="Node3D"]
+
+[node name="CameraVoxelizer" type="Node3D" parent="."]
+script = ExtResource("1_n7ghy")
+voxel_resolution = 32
+target_mesh_instance = NodePath("../TorusMesh")
+show_debug_cubes = true
+
+[node name="TorusMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("TorusMesh_1qxrn")
+
+[node name="SceneCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.766045, 0.642787, 0, -0.642787, 0.766045, 0, 2, 4)
+script = ExtResource("2_xm8j4")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 0, 3, 0)
+light_energy = 1.5
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -320.0
+offset_bottom = 250.0
+
+[node name="TitleLabel" type="Label" parent="UI/VBoxContainer"]
+layout_mode = 2
+text = "Camera Voxelizer - Assigned Mesh"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="UI/VBoxContainer"]
+layout_mode = 2
+
+[node name="InfoLabel" type="Label" parent="UI/VBoxContainer"]
+layout_mode = 2
+text = "This demo shows how to assign any mesh
+to the voxelizer through the editor.
+
+The TorusMesh is assigned via the 
+'Target Mesh Instance' property.
+
+Camera pans through taking snapshots,
+filling hollow interior with scanlines.
+
+Purple cubes show the solid result."
+autowrap_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="UI/VBoxContainer"]
+layout_mode = 2
+
+[node name="InstructionsLabel" type="Label" parent="UI/VBoxContainer"]
+layout_mode = 2
+text = "Instructions:
+1. Select CameraVoxelizer node
+2. In Inspector, assign any MeshInstance3D
+   to 'Target Mesh Instance' property
+3. Run scene to voxelize assigned mesh
+
+Camera Controls:
+Right-click: Capture mouse
+WASD: Move • QE: Up/Down
+Shift: Speed boost"
+autowrap_mode = 2

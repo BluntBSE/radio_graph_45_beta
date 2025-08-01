@@ -4,7 +4,7 @@ class_name CameraVoxelizer
 # Captures slices through mesh and fills interior even for hollow geometry
 
 @export var voxel_resolution: int = 64
-@export var target_mesh_instance: MeshInstance3D
+@export var target_mesh_instance: MeshInstance3D  # Assign any mesh from the scene in the editor
 @export var show_debug_cubes: bool = true
 
 var viewport_renderer: SubViewport
@@ -53,16 +53,31 @@ func setup_viewport_renderer():
     print("Viewport renderer setup complete")
 
 func start_voxelization():
-    # Find or create target mesh
-    if not target_mesh_instance:
-        target_mesh_instance = find_mesh_by_name("TriangularPrism")
+    # Check if a mesh is assigned in the editor
+    if target_mesh_instance and target_mesh_instance.mesh:
+        print("Using assigned target mesh: ", target_mesh_instance.name)
+    else:
+        # Fallback: try to find any mesh in the scene
+        target_mesh_instance = find_any_mesh_in_scene()
         
-    if not target_mesh_instance:
-        print("Creating triangular prism for demo...")
-        create_triangular_prism()
+        if target_mesh_instance:
+            print("Auto-detected mesh: ", target_mesh_instance.name)
+        else:
+            print("No mesh found in scene. Creating triangular prism for demo...")
+            create_triangular_prism()
+    
+    if not target_mesh_instance or not target_mesh_instance.mesh:
+        print("ERROR: No valid mesh found or assigned!")
+        return
     
     print("=== CAMERA-BASED VOXELIZATION ===")
     print("Target mesh: ", target_mesh_instance.name)
+    
+    # Get vertex count properly in Godot 4
+    var arrays = target_mesh_instance.mesh.surface_get_arrays(0)
+    var vertices = arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+    print("Mesh vertices: ", vertices.size())
+    
     print("Resolution: ", voxel_resolution, "³")
     
     var start_time = Time.get_ticks_msec()
@@ -148,24 +163,33 @@ func voxelize_mesh_camera_based(mesh_instance: MeshInstance3D) -> ImageTexture3D
     viewport_mesh.global_transform = mesh_instance.global_transform
     viewport_renderer.add_child(viewport_mesh)
     
-    # Setup camera for slice capture
-    setup_slice_camera(mesh_bounds)
+    # Setup camera for slice capture  
+    var voxel_slice_thickness = mesh_bounds.size.z / voxel_resolution
+    setup_slice_camera(mesh_bounds, voxel_slice_thickness)
+    
+    print("Voxel slice thickness: ", voxel_slice_thickness)
+    print("Camera near: ", slice_camera.near, ", far: ", slice_camera.far)
+    print("Camera depth of field: ", slice_camera.far - slice_camera.near)
     
     # Generate slices by panning camera through Z positions
     var slice_images = []
     
     print("Capturing ", voxel_resolution, " slices...")
+    print("Torus center should be at Z=", mesh_bounds.get_center().z)
     
     for z_slice in range(voxel_resolution):
         # Calculate world Z position for this slice
         var z_progress = float(z_slice) / voxel_resolution
         var world_z = mesh_bounds.position.z + z_progress * mesh_bounds.size.z
         
-        # Position camera looking at this Z slice
+        # Position camera to look AT this specific slice only
+        # Camera must be positioned exactly one slice thickness away
+        var camera_distance = slice_camera.near + voxel_slice_thickness * 0.5
+        
         slice_camera.position = Vector3(
             mesh_bounds.get_center().x,
             mesh_bounds.get_center().y,  
-            world_z + mesh_bounds.size.z * 0.6  # Camera outside mesh
+            world_z + camera_distance  # Positioned for thin slice capture
         )
         slice_camera.look_at(Vector3(
             mesh_bounds.get_center().x,
@@ -181,8 +205,12 @@ func voxelize_mesh_camera_based(mesh_instance: MeshInstance3D) -> ImageTexture3D
         var slice_image = capture_and_fill_slice()
         slice_images.append(slice_image)
         
-        if z_slice % 16 == 0:
-            print("Captured slice ", z_slice, " / ", voxel_resolution)
+        if z_slice % 8 == 0:  # More frequent progress updates
+            print("Captured slice ", z_slice, " / ", voxel_resolution, " at Z=", world_z)
+            # Debug specific slices around center
+            var center_slice = voxel_resolution / 2
+            if abs(z_slice - center_slice) <= 2:
+                print("  -> Center slice area, should show torus hole if present")
     
     # Store slices for debugging
     texture_slices = slice_images.duplicate()
@@ -197,22 +225,26 @@ func voxelize_mesh_camera_based(mesh_instance: MeshInstance3D) -> ImageTexture3D
     print("Camera-based voxelization complete!")
     return texture3d
 
-func setup_slice_camera(bounds: AABB):
+func setup_slice_camera(bounds: AABB, slice_thickness: float):
     # Setup orthogonal camera to capture cross-sections
     slice_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
     
     # Size to fit mesh bounds with padding
     var max_extent = max(bounds.size.x, bounds.size.y)
     slice_camera.size = max_extent * 1.2
+    
+    # CRITICAL: Set near/far to capture only one voxel slice thickness
+    # This prevents seeing through hollow areas like torus centers
     slice_camera.near = 0.1
-    slice_camera.far = bounds.size.z * 2.0
+    slice_camera.far = slice_camera.near + slice_thickness * 1.1  # Slightly thicker for safety
 
 func create_solid_material() -> StandardMaterial3D:
-    # Create material that renders solid white
+    # Create material that renders solid white with proper depth
     var material = StandardMaterial3D.new()
     material.albedo_color = Color.WHITE
-    material.unshaded = true
+    material.unshaded = false  # Use shading to better detect surfaces
     material.cull_mode = BaseMaterial3D.CULL_DISABLED
+    material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
     return material
 
 func capture_and_fill_slice() -> Image:
@@ -220,46 +252,48 @@ func capture_and_fill_slice() -> Image:
     var viewport_texture = viewport_renderer.get_texture()
     var raw_image = viewport_texture.get_image()
     
-    # Process with scanline filling to fill hollow interiors
+    # Process with ray casting intersection counting to handle hollow shapes correctly
     return fill_slice_interior(raw_image)
 
 func fill_slice_interior(raw_image: Image) -> Image:
-    # Use scanline filling to fill the interior of shapes
+    # Use ray casting with intersection counting for proper inside/outside detection
+    # Odd intersections = inside, even intersections = outside
     var filled_data = PackedByteArray()
     filled_data.resize(voxel_resolution * voxel_resolution)
     filled_data.fill(0)
     
     # Process each scanline (row) separately
     for y in range(voxel_resolution):
-        # Find intersections with mesh surface on this scanline
-        var intersections = []
+        # Cast ray from left to right, counting mesh intersections
+        var intersection_count = 0
+        var prev_was_surface = false
         
         for x in range(voxel_resolution):
             # Flip Y coordinate since Godot images have Y=0 at top, but we want Y=0 at bottom
             var flipped_y = voxel_resolution - 1 - y
             var pixel = raw_image.get_pixel(x, flipped_y)
-            if pixel.r > 0.5:  # Surface detected
-                intersections.append(x)
-        
-        # Fill between pairs of intersections
-        if intersections.size() >= 2:
-            # Sort intersections
-            intersections.sort()
             
-            # Fill between pairs
-            for i in range(0, intersections.size() - 1, 2):
-                var start_x = intersections[i]
-                var end_x = intersections[i + 1] if i + 1 < intersections.size() else intersections[i]
-                
-                # Fill pixels between intersections
-                for x in range(start_x, end_x + 1):
-                    if x >= 0 and x < voxel_resolution:
-                        filled_data[x + y * voxel_resolution] = 255
-        
-        # Also mark surface pixels themselves
-        for x in intersections:
-            if x >= 0 and x < voxel_resolution:
+            var is_surface = pixel.r > 0.5
+            
+            # Count intersections on BOTH entry and exit from surface
+            # This ensures proper handling of hollow regions
+            if is_surface != prev_was_surface:
+                intersection_count += 1
+            
+            # Determine if this pixel is inside based on intersection count
+            # Odd count = inside, even count = outside
+            var is_inside = (intersection_count % 2) == 1
+            
+            if is_inside:
                 filled_data[x + y * voxel_resolution] = 255
+            
+            prev_was_surface = is_surface
+    
+    # Debug: Save slice images to see what we're capturing
+    if randf() < 0.05:  # Save ~5% of slices for debugging
+        var debug_path = "res://debug_slice_" + str(randi() % 1000) + ".png"
+        raw_image.save_png(debug_path)
+        print("Debug: Saved raw slice to ", debug_path)
     
     return Image.create_from_data(voxel_resolution, voxel_resolution, false, Image.FORMAT_R8, filled_data)
 
@@ -331,6 +365,27 @@ func _search_for_mesh(node: Node, mesh_name: String) -> MeshInstance3D:
     
     for child in node.get_children():
         var result = _search_for_mesh(child, mesh_name)
+        if result:
+            return result
+    
+    return null
+
+func find_any_mesh_in_scene() -> MeshInstance3D:
+    # Helper function to find any valid mesh in the scene
+    return _search_for_any_mesh(get_tree().root)
+
+func _search_for_any_mesh(node: Node) -> MeshInstance3D:
+    # Skip the voxelizer node itself and camera nodes
+    if node == self or node is Camera3D or node is SubViewport:
+        return null
+        
+    if node is MeshInstance3D and node.mesh != null:
+        # Skip debug cubes
+        if not node.name.begins_with("VoxelCube"):
+            return node as MeshInstance3D
+    
+    for child in node.get_children():
+        var result = _search_for_any_mesh(child)
         if result:
             return result
     

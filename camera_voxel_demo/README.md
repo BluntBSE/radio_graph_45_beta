@@ -13,9 +13,9 @@ Instead of using mathematical algorithms like winding numbers, this approach:
 
 ## Key Advantages
 
-- **Fills hollow meshes**: Even if your mesh is just surface triangles, the result will be solid
+- **Handles hollow meshes correctly**: Uses ray casting intersection counting (odd=inside, even=outside)
 - **GPU accelerated**: Uses Godot's rendering pipeline for performance
-- **Handles complex topology**: Works with any mesh that can be rendered
+- **Handles complex topology**: Works with any mesh that can be rendered including donuts, hollow objects
 - **Intuitive**: Visual process that you can actually watch happen
 
 ## Files
@@ -46,16 +46,20 @@ for z_slice in range(voxel_resolution):
     var slice_image = capture_and_fill_slice()
 ```
 
-### 3. Scanline Filling
+### 3. Ray Casting with Intersection Counting
 ```gdscript
 # For each row in the slice image
 for y in range(voxel_resolution):
-    # Find where mesh surface intersects this scanline
-    var intersections = find_surface_intersections(y)
+    var intersection_count = 0
     
-    # Fill between pairs of intersections
-    for i in range(0, intersections.size() - 1, 2):
-        fill_pixels_between(intersections[i], intersections[i + 1])
+    # Cast ray from left to right
+    for x in range(voxel_resolution):
+        # Count surface intersections (transitions from background to surface)
+        if is_surface and not prev_was_surface:
+            intersection_count += 1
+        
+        # Odd intersections = inside, even intersections = outside
+        var is_inside = (intersection_count % 2) == 1
 ```
 
 ### 4. Result
@@ -80,11 +84,22 @@ The output is a solid Texture3D where:
 
 ## Usage
 
-1. Run `triangle_demo.tscn` for the basic demonstration
-2. Run `shape_demo.tscn` for interactive shape comparison
-3. Use the number keys (1-4) to switch between shapes
-4. Press Space or click "Voxelize" to start the process
-5. Watch purple cubes appear showing the filled voxel data
+### Method 1: Assign Mesh in Editor (Recommended)
+1. Add a `CameraVoxelizer` node to your scene
+2. Add any `MeshInstance3D` to your scene with the mesh you want to voxelize
+3. In the Inspector, set the `Target Mesh Instance` property to point to your mesh
+4. Run the scene - voxelization starts automatically
+
+### Method 2: Auto-Detection
+1. Add a `CameraVoxelizer` node to your scene
+2. Add any `MeshInstance3D` to your scene 
+3. Leave `Target Mesh Instance` empty - it will auto-detect the first valid mesh
+4. Run the scene
+
+### Method 3: Demo Scenes
+1. Run `triangle_demo.tscn` for the basic triangular prism demonstration
+2. Run `assigned_mesh_demo.tscn` to see how editor assignment works with a torus
+3. Run `shape_demo.tscn` for interactive shape comparison with UI controls
 
 ## Performance
 
