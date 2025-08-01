@@ -14,7 +14,7 @@ uniform float brightness : hint_range(0.1, 10.0) = 0.5;
 uniform float absorption_coefficient : hint_range(0.1, 10.0) = 0.5;  // Beer's law absorption
 uniform bool use_beers_law = false;
 uniform bool debug_sphere = false;
-uniform bool debug_cubes = true;
+uniform bool debug_cubes = false;
 uniform bool debug_texture_values = false;
 
 varying vec2 screen_uv;
