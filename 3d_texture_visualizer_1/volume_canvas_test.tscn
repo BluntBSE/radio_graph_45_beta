@@ -31,7 +31,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 script = ExtResource("2_456cd")
-volume_texture_path = "res://3d_texture_visualizer_1/debug_texture3d_cubes_in_space.tres"
+volume_texture_path = "res://voxelized_testsphere_32.tres"
 camera_node_path = NodePath("../../Camera3D")
 
 [node name="Instructions" type="Label" parent="UI"]

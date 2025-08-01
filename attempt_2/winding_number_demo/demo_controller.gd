@@ -1,12 +1,12 @@
-extends Node3D
+extends Node
 
 # Interactive controller for the winding number demo
 # Allows switching between different test objects and controlling visualization
 
-@onready var voxelizer = $"."
-@onready var test_sphere = $TestMeshes/TestSphere
-@onready var test_box = $TestMeshes/TestBox
-@onready var info_label = $UI/InfoPanel/InfoLabel
+@onready var voxelizer:WindingNumber = get_parent()
+@onready var test_sphere = %TestSphere
+@onready var test_box = %TestBox
+@onready var info_label = %InfoLabel
 
 func _ready():
     # Set initial target
@@ -70,10 +70,10 @@ func update_info_display():
         current_mesh = "Box"
     
     var voxel_count = 0
-    if voxelizer.generated_texture3d:
+    if voxelizer.generated_texture3d and voxelizer.texture_slices:
         # Count non-zero voxels
         for z in range(voxelizer.voxel_resolution):
-            var layer_data = voxelizer.generated_texture3d.get_layer_data(z).get_data()
+            var layer_data = voxelizer.texture_slices[z].get_data()
             for byte in layer_data:
                 if byte > 0:
                     voxel_count += 1

@@ -1,5 +1,5 @@
 extends Node3D
-
+class_name WindingNumber
 # Winding Number Voxelization Demo
 # Converts any mesh to a Texture3D using mathematically robust winding number algorithm
 
@@ -8,14 +8,65 @@ extends Node3D
 @export var show_debug_cubes: bool = true
 
 var generated_texture3d: ImageTexture3D
+var texture_slices: Array  # Store individual slices for access
+var mesh_bounds: AABB  # Store mesh bounds for debug visualization
+var camera: Camera3D  # Camera for scene navigation
 
 func _ready():
+    # Set up camera first
+    setup_camera()
+    
     # Wait for scene to load, then voxelize
     call_deferred("start_voxelization")
 
+func setup_camera():
+    # Create camera if it doesn't exist
+    camera = Camera3D.new()
+    camera.name = "VoxelCamera"
+    
+    # Load and attach the camera controller script
+    var script = load("res://attempt_2/winding_number_demo/camera_controller.gd")
+    camera.set_script(script)
+    
+    # Position camera at a good viewing distance
+    camera.position = Vector3(0, 0, 10)
+    #camera.look_at(Vector3.ZERO, Vector3.UP)
+    
+    add_child(camera)
+    
+    # Make it the current camera
+    camera.current = true
+    
+    print("Camera controls: Right-click to capture mouse, WASD to move, QE for up/down, Shift for speed")
+
+# Helper function to find a mesh by name in the scene tree
+func find_mesh_by_name(mesh_name: String) -> MeshInstance3D:
+    return _search_for_mesh(get_tree().root, mesh_name)
+
+func _search_for_mesh(node: Node, mesh_name: String) -> MeshInstance3D:
+    # Check if this node is a MeshInstance3D with the target name
+    if node is MeshInstance3D and node.name == mesh_name:
+        return node as MeshInstance3D
+    
+    # Recursively search children
+    for child in node.get_children():
+        var result = _search_for_mesh(child, mesh_name)
+        if result:
+            return result
+    
+    return null
+
 func start_voxelization():
-    if not target_mesh_instance or not target_mesh_instance.mesh:
-        print("ERROR: No target mesh assigned!")
+    # Force use of b_skull mesh
+    target_mesh_instance = find_mesh_by_name("b_skull")
+    if target_mesh_instance:
+        print("Found and using target mesh: b_skull")
+    else:
+        print("ERROR: Could not find b_skull mesh!")
+        return
+    
+    if not target_mesh_instance.mesh:
+        print("ERROR: b_skull has no mesh!")
         return
     
     print("=== WINDING NUMBER VOXELIZATION DEMO ===")
@@ -27,6 +78,15 @@ func start_voxelization():
     var end_time = Time.get_ticks_msec()
     
     print("Voxelization completed in ", end_time - start_time, " ms")
+    
+    # Save the texture3D automatically
+    if generated_texture3d:
+        var save_path = "res://voxelized_" + target_mesh_instance.name.to_lower() + "_" + str(voxel_resolution) + ".tres"
+        var result = ResourceSaver.save(generated_texture3d, save_path)
+        if result == OK:
+            print("Texture3D saved to: ", save_path)
+        else:
+            print("Failed to save Texture3D: ", result)
     
     if show_debug_cubes:
         display_voxels_as_cubes()
@@ -47,17 +107,23 @@ func voxelize_mesh_to_texture3d(mesh: Mesh, resolution: int) -> ImageTexture3D:
     print("Mesh triangles: ", indices.size() / 3)
     print("Mesh vertices: ", vertices.size())
     
-    # Calculate bounds
-    var mesh_aabb = AABB()
-    for vertex in vertices:
-        if mesh_aabb.size == Vector3.ZERO:
-            mesh_aabb.position = vertex
-        else:
-            mesh_aabb = mesh_aabb.expand(vertex)
+    # Calculate bounds - proper AABB initialization
+    if vertices.size() == 0:
+        print("ERROR: No vertices in mesh!")
+        return null
+    
+    var mesh_aabb = AABB(vertices[0], Vector3.ZERO)  # Start with first vertex
+    for i in range(1, vertices.size()):
+        mesh_aabb = mesh_aabb.expand(vertices[i])
+    
+    print("Initial mesh bounds: ", mesh_aabb)
     
     # Add some padding
     var padding = mesh_aabb.size * 0.1
     mesh_aabb = mesh_aabb.grow(padding.length())
+    
+    # Store bounds for debug visualization
+    mesh_bounds = mesh_aabb
     
     print("Voxel bounds: ", mesh_aabb)
     print("Voxel size per unit: ", mesh_aabb.size / resolution)
@@ -69,7 +135,8 @@ func voxelize_mesh_to_texture3d(mesh: Mesh, resolution: int) -> ImageTexture3D:
     
     print("\n--- Processing Voxels ---")
     var inside_count = 0
-    var progress_step = (resolution * resolution * resolution) / 10
+    var total_voxels = resolution * resolution * resolution
+    var progress_step = max(1, total_voxels / 10)  # Ensure progress_step is at least 1
     var processed = 0
     
     # Test each voxel position
@@ -118,7 +185,10 @@ func voxelize_mesh_to_texture3d(mesh: Mesh, resolution: int) -> ImageTexture3D:
     
     # Create ImageTexture3D
     var texture3d = ImageTexture3D.new()
-    texture3d.create_from_images(images)
+    texture3d.create(Image.FORMAT_R8, resolution, resolution, resolution, false, images)
+    
+    # Store the slices for later access
+    texture_slices = images.duplicate()
     
     print("Created Texture3D: ", resolution, "×", resolution, "×", resolution)
     return texture3d
@@ -186,13 +256,11 @@ func display_voxels_as_cubes():
             child.queue_free()
     
     # Get texture data back out
-    var images = []
-    for i in range(voxel_resolution):
-        images.append(generated_texture3d.get_layer_data(i))
+    var images = texture_slices  # Use stored slices instead of trying to extract from texture3d
     
     # Create cube mesh
     var cube_mesh = BoxMesh.new()
-    var voxel_world_size = 0.8  # Slightly smaller than grid cell
+    var voxel_world_size = min(mesh_bounds.size.x, mesh_bounds.size.y, mesh_bounds.size.z) / voxel_resolution * 0.8
     cube_mesh.size = Vector3(voxel_world_size, voxel_world_size, voxel_world_size)
     
     # Create material
@@ -202,7 +270,6 @@ func display_voxels_as_cubes():
     material.emission = Color.CYAN * 0.3
     
     var displayed_count = 0
-    var max_display = 5000  # Limit for performance
     
     # Display voxels
     for z in range(voxel_resolution):
@@ -213,22 +280,24 @@ func display_voxels_as_cubes():
             for x in range(voxel_resolution):
                 var pixel_index = x + y * voxel_resolution
                 
-                if image_data[pixel_index] > 0 and displayed_count < max_display:
+                if image_data[pixel_index] > 0:
                     var cube_instance = MeshInstance3D.new()
                     cube_instance.name = "VoxelCube_" + str(x) + "_" + str(y) + "_" + str(z)
                     cube_instance.mesh = cube_mesh
                     cube_instance.material_override = material
                     
-                    # Position cube in world space
-                    cube_instance.position = Vector3(x, y, z) - Vector3(voxel_resolution/2, voxel_resolution/2, voxel_resolution/2)
+                    # Position cube in world space (same transformation as voxelization)
+                    var world_pos = Vector3(
+                        mesh_bounds.position.x + (float(x) + 0.5) / voxel_resolution * mesh_bounds.size.x,
+                        mesh_bounds.position.y + (float(y) + 0.5) / voxel_resolution * mesh_bounds.size.y,
+                        mesh_bounds.position.z + (float(z) + 0.5) / voxel_resolution * mesh_bounds.size.z
+                    )
+                    cube_instance.position = world_pos
                     
                     add_child(cube_instance)
                     displayed_count += 1
     
     print("Displayed ", displayed_count, " voxel cubes")
-    
-    if displayed_count >= max_display:
-        print("Note: Limited to ", max_display, " cubes for performance")
 
 # Public function to get the generated texture
 func get_texture3d() -> ImageTexture3D:
@@ -247,7 +316,7 @@ func save_texture3d_data(filepath: String):
         
         # Save all layer data
         for i in range(voxel_resolution):
-            var layer_data = generated_texture3d.get_layer_data(i).get_data()
+            var layer_data = texture_slices[i].get_data()
             file.store_var(layer_data)
         
         file.close()
