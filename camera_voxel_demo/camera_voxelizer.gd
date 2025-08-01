@@ -17,13 +17,14 @@ var camera: Camera3D
 func _ready():
     setup_camera()
     setup_viewport_renderer()
-    call_deferred("start_voxelization")
+    print("Press 'T' to start voxelization process")
+    # Don't auto-start voxelization - wait for user input
 
 func setup_camera():
     # Create main scene camera
     camera = Camera3D.new()
     camera.name = "SceneCamera"
-    
+    camera.projection = Camera3D.PROJECTION_ORTHOGONAL
     # Load camera controller if available
     var controller_script = load("res://attempt_2/winding_number_demo/camera_controller.gd")
     if controller_script:
@@ -34,6 +35,12 @@ func setup_camera():
     camera.current = true
     
     print("Camera controls: Right-click to capture mouse, WASD to move, QE for up/down")
+
+func _input(event):
+    if event is InputEventKey and event.pressed:
+        if event.keycode == KEY_T:
+            print("Starting voxelization...")
+            start_voxelization()
 
 func setup_viewport_renderer():
     # Create SubViewport for off-screen slice rendering
@@ -237,7 +244,9 @@ func setup_slice_camera(bounds: AABB, slice_thickness: float):
     # This prevents seeing through hollow areas like torus centers
     slice_camera.near = 0.1
     slice_camera.far = slice_camera.near + slice_thickness * 1.1  # Slightly thicker for safety
-
+    # DEBUG: 
+    camera.near = 0.1
+    camera.far = slice_camera.near + slice_thickness * 1.1
 func create_solid_material() -> StandardMaterial3D:
     # Create material that renders solid white with proper depth
     var material = StandardMaterial3D.new()
@@ -256,38 +265,21 @@ func capture_and_fill_slice() -> Image:
     return fill_slice_interior(raw_image)
 
 func fill_slice_interior(raw_image: Image) -> Image:
-    # Use ray casting with intersection counting for proper inside/outside detection
-    # Odd intersections = inside, even intersections = outside
+    # Simply capture the surface pixels without any volume filling
     var filled_data = PackedByteArray()
     filled_data.resize(voxel_resolution * voxel_resolution)
     filled_data.fill(0)
     
-    # Process each scanline (row) separately
+    # Only mark surface pixels as filled
     for y in range(voxel_resolution):
-        # Cast ray from left to right, counting mesh intersections
-        var intersection_count = 0
-        var prev_was_surface = false
-        
         for x in range(voxel_resolution):
             # Flip Y coordinate since Godot images have Y=0 at top, but we want Y=0 at bottom
             var flipped_y = voxel_resolution - 1 - y
             var pixel = raw_image.get_pixel(x, flipped_y)
             
             var is_surface = pixel.r > 0.5
-            
-            # Count intersections on BOTH entry and exit from surface
-            # This ensures proper handling of hollow regions
-            if is_surface != prev_was_surface:
-                intersection_count += 1
-            
-            # Determine if this pixel is inside based on intersection count
-            # Odd count = inside, even count = outside
-            var is_inside = (intersection_count % 2) == 1
-            
-            if is_inside:
+            if is_surface:
                 filled_data[x + y * voxel_resolution] = 255
-            
-            prev_was_surface = is_surface
     
     # Debug: Save slice images to see what we're capturing
     if randf() < 0.05:  # Save ~5% of slices for debugging
