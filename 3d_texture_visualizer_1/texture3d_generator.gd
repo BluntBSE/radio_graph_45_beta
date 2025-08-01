@@ -7,7 +7,7 @@ extends Node
 const TEXTURE_SIZE = 256
 
 # Shape selection
-@export var shape_type: String = "six_pointed_cross"  # "six_pointed_cross", "thick_rectangles", "graduated_sphere"
+@export var shape_type: String = "six_pointed_cross"  # "six_pointed_cross", "thick_rectangles", "graduated_sphere", "solid_sphere", "two_overlapping_spheres", "cubes_in_space"
 
 # Cross parameters (for six_pointed_cross)
 const CROSS_THICKNESS = 16  # Thickness of each cross arm
@@ -19,6 +19,9 @@ const RECT_LENGTH_RATIO = 0.7
 
 # Sphere parameters (for graduated_sphere)
 const SPHERE_RADIUS_RATIO = 0.4  # Sphere radius as ratio of texture size
+
+# Cube parameters (for cubes_in_space)
+const CUBE_SIZE = 32  # Size of each cube in voxels
 
 func _ready():
     generate_and_save_texture3d()
@@ -50,6 +53,12 @@ func generate_and_save_texture3d():
                         intensity = generate_thick_rectangles(x, y, z, center)
                     "graduated_sphere":
                         intensity = generate_graduated_sphere(x, y, z, center)
+                    "solid_sphere":
+                        intensity = generate_solid_sphere(x, y, z, center)
+                    "two_overlapping_spheres":
+                        intensity = generate_two_overlapping_spheres(x, y, z, center)
+                    "cubes_in_space":
+                        intensity = generate_cubes_in_space(x, y, z, center)
                     _:
                         print("Unknown shape type: ", shape_type, " - using six_pointed_cross")
                         intensity = generate_six_pointed_cross(x, y, z, center)
@@ -143,11 +152,14 @@ func generate_thick_rectangles(x: int, y: int, z: int, center: int) -> float:
     var xz_rect = (abs(z - center) <= rect_half_thickness and abs(x - center) <= rect_half_length) or \
                   (abs(x - center) <= rect_half_thickness and abs(z - center) <= rect_half_length)
     
-    if xy_rect or xz_rect:
-        # Solid density for thick rectangles - no anti-aliasing for clearer debugging
-        return 1.0
+    # Additive density instead of boolean OR
+    var density = 0.0
+    if xy_rect:
+        density += 1.0
+    if xz_rect:
+        density += 1.0
     
-    return 0.0
+    return density  # 0.0, 1.0, or 2.0 depending on overlap
 
 func generate_graduated_sphere(x: int, y: int, z: int, center: int) -> float:
     var sphere_radius = TEXTURE_SIZE * SPHERE_RADIUS_RATIO
@@ -165,6 +177,91 @@ func generate_graduated_sphere(x: int, y: int, z: int, center: int) -> float:
         # Alternative: return 1.0 - (normalized_distance * normalized_distance)  # Quadratic falloff
     
     return 0.0
+
+func generate_solid_sphere(x: int, y: int, z: int, center: int) -> float:
+    var sphere_radius = TEXTURE_SIZE * SPHERE_RADIUS_RATIO
+    
+    # Calculate distance from center
+    var dx = float(x - center)
+    var dy = float(y - center) 
+    var dz = float(z - center)
+    var distance_from_center = sqrt(dx*dx + dy*dy + dz*dz)
+    
+    if distance_from_center <= sphere_radius:
+        return 1.0  # Solid white inside sphere
+    
+    return 0.0  # Black outside sphere
+
+func generate_two_overlapping_spheres(x: int, y: int, z: int, center: int) -> float:
+    var sphere_radius = TEXTURE_SIZE * SPHERE_RADIUS_RATIO
+    
+    # First sphere centered at origin
+    var dx1 = float(x - center)
+    var dy1 = float(y - center)
+    var dz1 = float(z - center)
+    var distance1 = sqrt(dx1*dx1 + dy1*dy1 + dz1*dz1)
+    var in_sphere1 = distance1 <= sphere_radius
+    
+    # Second sphere offset to create partial overlap
+    var offset = sphere_radius * 1.2  # 20% overlap
+    var center2_x = center + int(offset)
+    var dx2 = float(x - center2_x)
+    var dy2 = float(y - center)
+    var dz2 = float(z - center)
+    var distance2 = sqrt(dx2*dx2 + dy2*dy2 + dz2*dz2)
+    var in_sphere2 = distance2 <= sphere_radius
+    
+    # Return 1.0 if inside either sphere (not additive)
+    if in_sphere1 or in_sphere2:
+        return 1.0
+    
+    return 0.0
+
+func generate_cubes_in_space(x: int, y: int, z: int, center: int) -> float:
+    var half_cube = CUBE_SIZE / 2
+    var quarter_size = TEXTURE_SIZE / 4
+    
+    # Define cube centers
+    # 8 corner cubes
+    var corner_cubes = [
+        # Bottom corners (z = quarter_size)
+        Vector3(quarter_size, quarter_size, quarter_size),
+        Vector3(3 * quarter_size, quarter_size, quarter_size),
+        Vector3(quarter_size, 3 * quarter_size, quarter_size),
+        Vector3(3 * quarter_size, 3 * quarter_size, quarter_size),
+        # Top corners (z = 3 * quarter_size)
+        Vector3(quarter_size, quarter_size, 3 * quarter_size),
+        Vector3(3 * quarter_size, quarter_size, 3 * quarter_size),
+        Vector3(quarter_size, 3 * quarter_size, 3 * quarter_size),
+        Vector3(3 * quarter_size, 3 * quarter_size, 3 * quarter_size)
+    ]
+    
+    # 2 center cubes (near each other but not overlapping)
+    var center_offset = CUBE_SIZE + 8  # 8 voxel gap between cubes
+    var center_cubes = [
+        Vector3(center - center_offset/2, center, center),
+        Vector3(center + center_offset/2, center, center)
+    ]
+    
+    # Check all corner cubes
+    for cube_center in corner_cubes:
+        if is_in_cube(x, y, z, cube_center, half_cube):
+            return 1.0
+    
+    # Check center cubes
+    for cube_center in center_cubes:
+        if is_in_cube(x, y, z, cube_center, half_cube):
+            return 1.0
+    
+    return 0.0
+
+# Helper function for cube generation
+func is_in_cube(x: int, y: int, z: int, cube_center: Vector3, half_size: int) -> bool:
+    var dx = abs(x - int(cube_center.x))
+    var dy = abs(y - int(cube_center.y))
+    var dz = abs(z - int(cube_center.z))
+    
+    return dx <= half_size and dy <= half_size and dz <= half_size
 
 # Helper functions for six-pointed cross generation
 func is_in_xy_cross(x: int, y: int, center: int, half_length: int, half_thickness: int) -> bool:

@@ -9,11 +9,13 @@ shader = ExtResource("3_789ef")
 shader_parameter/camera_transform = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 shader_parameter/camera_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 shader_parameter/screen_size = Vector2(0, 0)
-shader_parameter/density_multiplier = 1.0
 shader_parameter/max_steps = 128
 shader_parameter/step_size = 0.0078
 shader_parameter/brightness = 1.0
+shader_parameter/absorption_coefficient = 1.0
+shader_parameter/use_beers_law = false
 shader_parameter/debug_sphere = true
+shader_parameter/debug_texture_values = false
 
 [node name="VolumeCanvasTest" type="Node3D"]
 
@@ -29,6 +31,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 script = ExtResource("2_456cd")
+volume_texture_path = "res://3d_texture_visualizer_1/debug_texture3d_cubes_in_space.tres"
 camera_node_path = NodePath("../../Camera3D")
 
 [node name="Instructions" type="Label" parent="UI"]

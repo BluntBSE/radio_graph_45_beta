@@ -6,12 +6,15 @@ uniform mat4 camera_projection;
 uniform vec2 screen_size;
 
 // Volume rendering uniforms
-uniform sampler3D volume_texture : filter_linear;
-uniform float density_multiplier : hint_range(0.1, 20.0) = 0.5;  // Higher default
-uniform int max_steps : hint_range(16, 512) = 128;
-uniform float step_size : hint_range(0.005, 0.5) = 0.05;  // Bigger steps = more accumulation
-uniform float brightness : hint_range(0.1, 10.0) = 0.5;  // Much brighter default
-uniform bool debug_sphere = true;
+uniform sampler3D volume_texture : filter_nearest;
+//uniform float density_multiplier : hint_range(0.1, 20.0) = 0.5;  // Higher default
+uniform int max_steps : hint_range(16, 512) = 10000;
+uniform float step_size : hint_range(0.005, 0.5) = 0.0078;
+uniform float brightness : hint_range(0.1, 10.0) = 0.5;
+uniform float absorption_coefficient : hint_range(0.1, 10.0) = 0.5;  // Beer's law absorption
+uniform bool use_beers_law = false;
+uniform bool debug_sphere = false;
+uniform bool debug_texture_values = false;
 
 varying vec2 screen_uv;
 
@@ -30,7 +33,7 @@ float sample_volume(vec3 pos) {
         float sphere1_distance = sphere_sdf(pos, vec3(0.0, 0.0, 0.0), 2.0);
 
         // Second sphere offset to create partial overlap
-        float sphere2_distance = sphere_sdf(pos, vec3(1.5, 0.0, 0.0), 2.0);
+        float sphere2_distance = sphere_sdf(pos, vec3(6.0, 0.0, 0.0), 2.0);
 
         float density = 0.0;
 
@@ -47,10 +50,12 @@ float sample_volume(vec3 pos) {
         // In single sphere regions, density will be 1.0 (normal)
         // Outside both spheres, density will be 0.0 (dark)
         return density;
-    }    // Convert from local space [-1,1] to texture space [0,1]
-    vec3 tex_coord = pos * 0.5 + 0.5;
+    }
 
-    // Ensure position is in [0,1] range
+    // Simple mapping: assume world space roughly [-2,+2] maps to texture [0,1]
+    vec3 tex_coord = (pos + 2.0) / 4.0;
+
+    // Clamp to texture bounds - looks wild if you delete this lol
     if (any(lessThan(tex_coord, vec3(0.0))) || any(greaterThan(tex_coord, vec3(1.0)))) {
         return 0.0;
     }
@@ -58,31 +63,16 @@ float sample_volume(vec3 pos) {
     return texture(volume_texture, tex_coord).r;
 }
 
-bool ray_box_intersection(vec3 ray_origin, vec3 ray_dir, out float t_near, out float t_far) {
-    // Box bounds in local space
-    vec3 box_min = vec3(-1.0);
-    vec3 box_max = vec3(1.0);
 
-    vec3 inv_dir = 1.0 / ray_dir;
-    vec3 t1 = (box_min - ray_origin) * inv_dir;
-    vec3 t2 = (box_max - ray_origin) * inv_dir;
-
-    vec3 t_min = min(t1, t2);
-    vec3 t_max = max(t1, t2);
-
-    t_near = max(max(t_min.x, t_min.y), t_min.z);
-    t_far = min(min(t_max.x, t_max.y), t_max.z);
-
-    return t_far > 0.0 && t_near < t_far;
-}
 
 vec3 ray_march(vec3 ray_origin, vec3 ray_direction) {
     float accumulated_density = 0.0;
+    float transmittance = 1.0;  // Start with full transmittance (no absorption yet)
     vec3 current_pos = ray_origin;
     float total_distance = 0.0;
-    float step_size_world = step_size; // Use step size directly in world space
+    float step_size_world = step_size;
 
-    // March for a reasonable distance - your reference used 30.0
+    // Volume rendering loop - conditionally apply Beer's law
     for (int i = 0; i < max_steps; i++) {
         if (total_distance > 30.0) break;
 
@@ -90,8 +80,23 @@ vec3 ray_march(vec3 ray_origin, vec3 ray_direction) {
         float density = sample_volume(current_pos);
 
         if (density > 0.0) {
-            // Accumulate density like your reference shader
-            accumulated_density += density * step_size_world;
+            if (use_beers_law) {
+                // Beer's law: Calculate absorption for this step
+                float absorption = density * absorption_coefficient * step_size_world;
+
+                // Add light contribution weighted by current transmittance
+                // This simulates light scattering towards the camera
+                accumulated_density += density * step_size_world * transmittance;
+
+                // Update transmittance using Beer's law: T = exp(-absorption)
+                transmittance *= exp(-absorption);
+
+                // Early termination if transmittance becomes negligible
+                if (transmittance < 0.01) break;
+            } else {
+                // Simple accumulation without Beer's law absorption
+                accumulated_density += density * step_size_world;
+            }
         }
 
         // Step along the ray
@@ -99,8 +104,8 @@ vec3 ray_march(vec3 ray_origin, vec3 ray_direction) {
         total_distance += step_size_world;
     }
 
-    // Convert to intensity - matching your reference approach
-    float intensity = accumulated_density * density_multiplier * brightness;
+    // Convert to intensity
+    float intensity = accumulated_density  * brightness;
     return vec3(intensity);
 }void fragment() {
     // Convert screen UV to normalized device coordinates
