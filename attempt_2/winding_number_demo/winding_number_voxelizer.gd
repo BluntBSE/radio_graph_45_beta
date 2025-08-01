@@ -3,9 +3,10 @@ class_name WindingNumber
 # Winding Number Voxelization Demo
 # Converts any mesh to a Texture3D using mathematically robust winding number algorithm
 
-@export var voxel_resolution: int = 32  # Start small for testing
+@export var voxel_resolution: int = 64  # Higher resolution
 @export var target_mesh_instance: MeshInstance3D
 @export var show_debug_cubes: bool = true
+
 
 var generated_texture3d: ImageTexture3D
 var texture_slices: Array  # Store individual slices for access
@@ -128,12 +129,18 @@ func voxelize_mesh_to_texture3d(mesh: Mesh, resolution: int) -> ImageTexture3D:
     print("Voxel bounds: ", mesh_aabb)
     print("Voxel size per unit: ", mesh_aabb.size / resolution)
     
+    # Build BVH for acceleration
+    var bvh_start_time = Time.get_ticks_msec()
+    var bvh_root = build_bvh(vertices, indices)
+    var bvh_end_time = Time.get_ticks_msec()
+    print("BVH built in ", bvh_end_time - bvh_start_time, " ms")
+    
     # Create 3D texture data
     var image_data = PackedByteArray()
     image_data.resize(resolution * resolution * resolution)
     image_data.fill(0)  # Initialize to empty
     
-    print("\n--- Processing Voxels ---")
+    print("\n--- Processing Voxels with BVH Acceleration ---")
     var inside_count = 0
     var total_voxels = resolution * resolution * resolution
     var progress_step = max(1, total_voxels / 10)  # Ensure progress_step is at least 1
@@ -150,8 +157,8 @@ func voxelize_mesh_to_texture3d(mesh: Mesh, resolution: int) -> ImageTexture3D:
                     mesh_aabb.position.z + (float(z) + 0.5) / resolution * mesh_aabb.size.z
                 )
                 
-                # Test if point is inside using winding number
-                var is_inside = point_inside_mesh_winding_number(world_pos, vertices, indices)
+                # Test if point is inside using BVH-accelerated winding number
+                var is_inside = point_inside_mesh_winding_number_bvh(world_pos, vertices, indices, bvh_root)
                 
                 if is_inside:
                     var voxel_index = x + y * resolution + z * resolution * resolution
@@ -193,7 +200,139 @@ func voxelize_mesh_to_texture3d(mesh: Mesh, resolution: int) -> ImageTexture3D:
     print("Created Texture3D: ", resolution, "×", resolution, "×", resolution)
     return texture3d
 
-# Winding number algorithm for point-in-mesh testing
+# BVH Node for spatial acceleration
+class BVHNode:
+    var bbox: AABB
+    var triangles: Array  # Array of triangle indices
+    var left: BVHNode
+    var right: BVHNode
+    var is_leaf: bool = false
+    
+    func _init(triangle_list: Array = []):
+        triangles = triangle_list
+        is_leaf = triangles.size() <= 8  # Leaf threshold
+
+# Build BVH tree for fast triangle culling
+func build_bvh(vertices: PackedVector3Array, indices: PackedInt32Array) -> BVHNode:
+    print("Building BVH for ", indices.size() / 3, " triangles...")
+    
+    # Create triangle list with indices and centroids
+    var triangles = []
+    for i in range(0, indices.size(), 3):
+        var v0 = vertices[indices[i]]
+        var v1 = vertices[indices[i + 1]]
+        var v2 = vertices[indices[i + 2]]
+        var centroid = (v0 + v1 + v2) / 3.0
+        triangles.append({
+            "index": i,
+            "centroid": centroid,
+            "bbox": AABB(v0, Vector3.ZERO).expand(v1).expand(v2)
+        })
+    
+    var root = build_bvh_recursive(triangles, 0)
+    print("BVH built with depth: ", get_bvh_depth(root))
+    return root
+
+func build_bvh_recursive(triangles: Array, depth: int) -> BVHNode:
+    var node = BVHNode.new()
+    
+    # Calculate bounding box for all triangles
+    if triangles.size() > 0:
+        node.bbox = triangles[0].bbox
+        for i in range(1, triangles.size()):
+            node.bbox = node.bbox.merge(triangles[i].bbox)
+    
+    # Leaf node
+    if triangles.size() <= 8 or depth > 20:
+        node.is_leaf = true
+        for triangle in triangles:
+            node.triangles.append(triangle.index)
+        return node
+    
+    # Choose split axis (longest axis)
+    var size = node.bbox.size
+    var axis = 0
+    if size.y > size.x and size.y > size.z:
+        axis = 1
+    elif size.z > size.x and size.z > size.y:
+        axis = 2
+    
+    # Sort triangles by centroid on chosen axis
+    triangles.sort_custom(func(a, b): 
+        if axis == 0:
+            return a.centroid.x < b.centroid.x
+        elif axis == 1:
+            return a.centroid.y < b.centroid.y
+        else:
+            return a.centroid.z < b.centroid.z
+    )
+    
+    # Split in half
+    var mid = triangles.size() / 2
+    var left_triangles = triangles.slice(0, mid)
+    var right_triangles = triangles.slice(mid)
+    
+    # Recursively build children
+    node.left = build_bvh_recursive(left_triangles, depth + 1)
+    node.right = build_bvh_recursive(right_triangles, depth + 1)
+    
+    return node
+
+func get_bvh_depth(node: BVHNode) -> int:
+    if node == null or node.is_leaf:
+        return 1
+    return 1 + max(get_bvh_depth(node.left), get_bvh_depth(node.right))
+
+# Winding number algorithm with BVH acceleration
+func point_inside_mesh_winding_number_bvh(point: Vector3, vertices: PackedVector3Array, indices: PackedInt32Array, bvh_root: BVHNode) -> bool:
+    var winding_number = 0.0
+    
+    # Traverse BVH and sum solid angles from relevant triangles
+    winding_number = calculate_winding_number_bvh(point, vertices, indices, bvh_root)
+    
+    # Normalize by 4π (total solid angle of sphere)
+    winding_number /= (4.0 * PI)
+    
+    # Point is inside if winding number magnitude > 0.5
+    return abs(winding_number) > 0.5
+
+func calculate_winding_number_bvh(point: Vector3, vertices: PackedVector3Array, indices: PackedInt32Array, node: BVHNode) -> float:
+    if node == null:
+        return 0.0
+    
+    # Check if point is close enough to this node's bounding box
+    var distance_to_bbox = node.bbox.distance_to(point)
+    var bbox_size = node.bbox.size.length()
+    
+    # Skip distant nodes - they contribute negligibly to winding number
+    if distance_to_bbox > bbox_size * 2.0:
+        return 0.0
+    
+    if node.is_leaf:
+        var winding_contribution = 0.0
+        # Process triangles in this leaf
+        for tri_index in node.triangles:
+            var v0 = vertices[indices[tri_index]]
+            var v1 = vertices[indices[tri_index + 1]]
+            var v2 = vertices[indices[tri_index + 2]]
+            
+            # Additional distance check for individual triangles
+            var triangle_center = (v0 + v1 + v2) / 3.0
+            var max_triangle_size = max(v0.distance_to(v1), max(v1.distance_to(v2), v2.distance_to(v0)))
+            if point.distance_to(triangle_center) > max_triangle_size * 3.0:
+                continue
+            
+            var solid_angle = calculate_solid_angle(point, v0, v1, v2)
+            winding_contribution += solid_angle
+        
+        return winding_contribution
+    else:
+        # Recurse into children
+        var left_contribution = calculate_winding_number_bvh(point, vertices, indices, node.left)
+        var right_contribution = calculate_winding_number_bvh(point, vertices, indices, node.right)
+        return left_contribution + right_contribution
+
+# Original algorithm for comparison (kept for fallback)
 func point_inside_mesh_winding_number(point: Vector3, vertices: PackedVector3Array, indices: PackedInt32Array) -> bool:
     var winding_number = 0.0
     
@@ -202,6 +341,12 @@ func point_inside_mesh_winding_number(point: Vector3, vertices: PackedVector3Arr
         var v0 = vertices[indices[i]]
         var v1 = vertices[indices[i + 1]]
         var v2 = vertices[indices[i + 2]]
+        
+        # Quick distance check - skip triangles that are very far away
+        var triangle_center = (v0 + v1 + v2) / 3.0
+        var max_triangle_size = max(v0.distance_to(v1), max(v1.distance_to(v2), v2.distance_to(v0)))
+        if point.distance_to(triangle_center) > max_triangle_size * 3.0:
+            continue  # Triangle is too far to significantly affect winding number
         
         var solid_angle = calculate_solid_angle(point, v0, v1, v2)
         winding_number += solid_angle

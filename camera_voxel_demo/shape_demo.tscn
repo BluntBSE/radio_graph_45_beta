@@ -1,0 +1,27 @@
+[gd_scene load_steps=3 format=3 uid="uid://bs3f3q0uogjp4"]
+
+[ext_resource type="Script" path="res://camera_voxel_demo/shape_demo.gd" id="1_n7ghy"]
+[ext_resource type="Script" path="res://attempt_2/winding_number_demo/camera_controller.gd" id="2_xm8j4"]
+
+[node name="CameraVoxelShapeDemo" type="Node3D"]
+script = ExtResource("1_n7ghy")
+current_shape_index = 0
+voxel_resolution = 32
+
+[node name="SceneCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.766045, 0.642787, 0, -0.642787, 0.766045, 0, 2, 4)
+script = ExtResource("2_xm8j4")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 0, 3, 0)
+light_energy = 1.5
+
+[node name="Environment" type="Node3D" parent="."]
+
+[node name="GridMesh" type="MeshInstance3D" parent="Environment"]
+transform = Transform3D(5, 0, 0, 0, 1, 0, 0, 0, 5, 0, -3, 0)
+material_override = SubResource("id_missing")
+
+[node name="GridMaterial" type="StandardMaterial3D" parent="Environment/GridMesh"]
+albedo_color = Color(0.3, 0.3, 0.3, 1)
+roughness = 1.0

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://s1dno0sc74hi"
+path="res://.godot/imported/winding_number_voxelizer.glsl-7afd175d3237ac0d30c205c24bcc6097.res"
+
+[deps]
+
+source_file="res://attempt_2/winding_number_demo/winding_number_voxelizer.glsl"
+dest_files=["res://.godot/imported/winding_number_voxelizer.glsl-7afd175d3237ac0d30c205c24bcc6097.res"]
+
+[params]
+

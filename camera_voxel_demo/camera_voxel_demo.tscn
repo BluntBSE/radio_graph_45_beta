@@ -1,0 +1,31 @@
+[gd_scene load_steps=2 format=3 uid="uid://d1j3vh04dqdnf"]
+
+[ext_resource type="Script" uid="uid://cj02weydos4eh" path="res://camera_voxel_demo/camera_voxelizer.gd" id="1_8q5vx"]
+
+[node name="CameraVoxelDemo" type="Node3D"]
+script = ExtResource("1_8q5vx")
+voxel_resolution = 32
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 2, 0)
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="InfoLabel" type="Label" parent="UI"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_top = -100.0
+offset_right = 600.0
+grow_vertical = 0
+text = "Camera-Based Voxelizer Demo
+- Creates triangular prism and voxelizes using camera snapshots
+- Scanline filling ensures hollow shapes are filled solid
+- Purple cubes show resulting voxel data"

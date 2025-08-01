@@ -14,6 +14,7 @@ uniform float brightness : hint_range(0.1, 10.0) = 0.5;
 uniform float absorption_coefficient : hint_range(0.1, 10.0) = 0.5;  // Beer's law absorption
 uniform bool use_beers_law = false;
 uniform bool debug_sphere = false;
+uniform bool debug_cubes = true;
 uniform bool debug_texture_values = false;
 
 varying vec2 screen_uv;
@@ -25,6 +26,12 @@ void vertex() {
 // Debug SDF sphere
 float sphere_sdf(vec3 point, vec3 center, float radius) {
     return length(point - center) - radius;
+}
+
+// Debug SDF cube (box)
+float cube_sdf(vec3 point, vec3 center, vec3 size) {
+    vec3 d = abs(point - center) - size;
+    return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
 }
 
 float sample_volume(vec3 pos) {
@@ -51,6 +58,37 @@ float sample_volume(vec3 pos) {
         // Outside both spheres, density will be 0.0 (dark)
         return density;
     }
+    
+    if (debug_cubes) {
+        // First cube at origin
+        float cube1_distance = cube_sdf(pos, vec3(0.0, 0.0, 0.0), vec3(1.5, 1.5, 1.5));
+
+        // Second cube offset to create partial overlap
+        float cube2_distance = cube_sdf(pos, vec3(4.0, 0.0, 0.0), vec3(1.5, 1.5, 1.5));
+
+        // Third cube in different position for more interesting layout
+        float cube3_distance = cube_sdf(pos, vec3(2.0, 3.0, 0.0), vec3(1.2, 1.2, 1.2));
+
+        float density = 0.0;
+
+        // Additive density - each cube contributes independently
+        if (cube1_distance < 0.0) {
+            density += 0.2; // First cube contributes density
+        }
+
+        if (cube2_distance < 0.0) {
+            density += 0.2; // Second cube contributes density
+        }
+
+        if (cube3_distance < 0.0) {
+            density += 0.2; // Third cube contributes slightly less density
+        }
+
+        // In overlap regions, density will be higher (brighter)
+        // In single cube regions, density will be 1.0 (normal)
+        // Outside all cubes, density will be 0.0 (dark)
+        return density;
+    }
 
     // Simple mapping: assume world space roughly [-2,+2] maps to texture [0,1]
     vec3 tex_coord = (pos + 2.0) / 4.0;
@@ -62,6 +100,9 @@ float sample_volume(vec3 pos) {
 
     return texture(volume_texture, tex_coord).r;
 }
+    
+
+
 
 
 

@@ -1,0 +1,58 @@
+[gd_scene load_steps=3 format=3 uid="uid://cqr0vtcfvyl12"]
+
+[ext_resource type="Script" path="res://camera_voxel_demo/camera_voxelizer.gd" id="1_m8b3x"]
+[ext_resource type="Script" path="res://attempt_2/winding_number_demo/camera_controller.gd" id="2_8dlj2"]
+
+[node name="CameraVoxelTriangleDemo" type="Node3D"]
+script = ExtResource("1_m8b3x")
+voxel_resolution = 32
+show_debug_cubes = true
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 0, 3, 0)
+light_energy = 1.5
+
+[node name="UI" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -300.0
+offset_bottom = 200.0
+
+[node name="TitleLabel" type="Label" parent="UI/VBoxContainer"]
+layout_mode = 2
+text = "Camera Voxelizer Demo"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="UI/VBoxContainer"]
+layout_mode = 2
+
+[node name="InfoLabel" type="Label" parent="UI/VBoxContainer"]
+layout_mode = 2
+text = "Watch the camera pan through the triangular prism
+taking snapshots at each Z slice.
+
+Scanline filling ensures the hollow prism 
+becomes a solid triangle in the voxel data.
+
+Purple cubes show the final voxelized result."
+autowrap_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="UI/VBoxContainer"]
+layout_mode = 2
+
+[node name="ControlsLabel" type="Label" parent="UI/VBoxContainer"]
+layout_mode = 2
+text = "Camera Controls:
+Right-click: Capture mouse
+WASD: Move camera
+QE: Up/Down
+Shift: Speed boost"
+autowrap_mode = 2

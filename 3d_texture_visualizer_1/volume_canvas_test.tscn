@@ -15,6 +15,7 @@ shader_parameter/brightness = 1.0
 shader_parameter/absorption_coefficient = 1.0
 shader_parameter/use_beers_law = false
 shader_parameter/debug_sphere = true
+shader_parameter/debug_cubes = true
 shader_parameter/debug_texture_values = false
 
 [node name="VolumeCanvasTest" type="Node3D"]
