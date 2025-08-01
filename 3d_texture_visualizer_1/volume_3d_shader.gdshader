@@ -1,10 +1,10 @@
 shader_type spatial;
-render_mode cull_disabled,unshaded, depth_draw_opaque, depth_test_disabled, blend_add;//, diffuse_burley, specular_schlick_ggx;
+render_mode cull_disabled,unshaded, blend_add;//, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler3D volume_texture : filter_linear;
 uniform float density_multiplier : hint_range(0.1, 5.0) = 1.0;
 uniform int max_steps : hint_range(16, 512) = 128;
-uniform float step_size : hint_range(0.005, 0.1) = 0.01;
+uniform float step_size : hint_range(0.005, 0.1) = 0.0078;
 uniform float absorption_coefficient : hint_range(0.1, 10.0) = 8.0;
 uniform float brightness : hint_range(0.1, 3.0) = 1.0;
 
@@ -122,5 +122,8 @@ void fragment() {
     // final_intensity = clamp(final_intensity, 0.0, 1.0);    
     // Output color - white for the volume, transparent background
     ALBEDO = vec3(final_intensity);
-    ALPHA = final_intensity;
+    // Debug: color based on ray direction  
+    //ALBEDO = abs(ray_dir); // Should show RGB based on XYZ direction
+    //ALPHA = final_intensity;
+    ALPHA = 1.0;
 }

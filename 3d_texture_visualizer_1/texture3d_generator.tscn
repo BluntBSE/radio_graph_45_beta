@@ -4,3 +4,4 @@
 
 [node name="Texture3DGenerator" type="Node"]
 script = ExtResource("1_1j8kl")
+shape_type = "thick_rectangles"

@@ -8,6 +8,7 @@ ambient_light_source = 2
 
 [node name="Volume3DViewer" type="Node3D"]
 script = ExtResource("1_controller")
+texture_path = "res://3d_texture_visualizer_1/debug_texture3d_thick_rectangles.tres"
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)

@@ -12,6 +12,9 @@ extends Node3D
 @export var mouse_sensitivity: float = 0.002
 @export var scroll_speed: float = 2.0
 
+# Volume texture to load
+@export var texture_path: String = "res://3d_texture_visualizer_1/six_pointed_cross_texture3d.tres"
+
 # Camera rotation variables
 var mouse_captured: bool = false
 var rotation_x: float = 0.0
@@ -46,17 +49,15 @@ func setup_volume_renderer():
     volume_mesh.material_override = volume_material
 
 func load_volume_texture():
-    var texture_path = "res://3d_texture_visualizer_1/six_pointed_cross_texture3d.tres"
-    
     if ResourceLoader.exists(texture_path):
         volume_texture = load(texture_path)
         if volume_texture and volume_material:
             volume_material.set_shader_parameter("volume_texture", volume_texture)
-            print("Successfully loaded 3D texture for volume rendering")
+            print("Successfully loaded 3D texture for volume rendering: ", texture_path)
         else:
             print("Failed to load 3D texture from: ", texture_path)
     else:
-        print("3D texture file not found. Please run texture3d_generator.tscn first.")
+        print("3D texture file not found: ", texture_path, ". Please run texture3d_generator.tscn first.")
 
 func setup_ui():
     # Add some basic UI instructions
