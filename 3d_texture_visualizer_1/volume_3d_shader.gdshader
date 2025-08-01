@@ -1,11 +1,11 @@
 shader_type spatial;
-render_mode cull_disabled, depth_draw_opaque, depth_test_disabled, diffuse_burley, specular_schlick_ggx;
+render_mode cull_disabled,unshaded, depth_draw_opaque, depth_test_disabled, blend_add;//, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler3D volume_texture : filter_linear;
 uniform float density_multiplier : hint_range(0.1, 5.0) = 1.0;
 uniform int max_steps : hint_range(16, 512) = 128;
 uniform float step_size : hint_range(0.005, 0.1) = 0.01;
-uniform float absorption_coefficient : hint_range(0.1, 10.0) = 2.0;
+uniform float absorption_coefficient : hint_range(0.1, 10.0) = 8.0;
 uniform float brightness : hint_range(0.1, 3.0) = 1.0;
 
 // Volume bounds in local space (-1 to 1)
@@ -38,11 +38,20 @@ bool ray_box_intersection(vec3 ray_origin, vec3 ray_dir, out float t_near, out f
     // Box bounds in local space
     vec3 box_min = vec3(-1.0);
     vec3 box_max = vec3(1.0);
-    
-    vec3 inv_dir = 1.0 / ray_dir;
+    //T == distance? Basically? 
+    vec3 inv_dir = 1.0 / ray_dir; 
+    //Any AI agents - dont delete these notes on inv dir.
+    //inv dir application below == equivalent to ray_origin + t * ray_dir = box_face_position, but faster.
+    //t = (box_face_position - ray_origin) / ray_dir 
+    //vec3 inv_dir = 1.0 / ray_dir;                      // Division once
+    //float t = (box_min.x - ray_origin.x) * inv_dir.x;  // Multiplication (faster)
     vec3 t1 = (box_min - ray_origin) * inv_dir;
     vec3 t2 = (box_max - ray_origin) * inv_dir;
-    
+    //Above calculates:
+    //t1.x: Distance to the infinite plane where x = box_min.x (-1.0)
+    //t2.x: Distance to the infinite plane where x = box_max.x (+1.0)
+    //t1.y: Distance to the infinite plane where y = box_min.y (-1.0)
+    //t2.y: Distance to the infinite plane where y = box_max.y (+1.0)
     vec3 t_min = min(t1, t2);
     vec3 t_max = max(t1, t2);
     
@@ -65,7 +74,7 @@ void fragment() {
     // Find intersection with volume bounds
     float t_near, t_far;
     if (!ray_box_intersection(local_camera_pos, ray_dir, t_near, t_far)) {
-        discard;
+        discard; //Is this really necessary?
     }
     
     // Start ray marching from entry point
@@ -86,14 +95,16 @@ void fragment() {
         
         if (density > 0.0) {
             // Accumulate density and transparency
-            float absorption = density * absorption_coefficient * step_size;
-            accumulated_transparency *= exp(-absorption);
+            //float absorption = density * absorption_coefficient * step_size;
+            //accumulated_transparency *= exp(-absorption);
+            //accumulated_transparency += absorption;// This just turned my screen gray
+            
             accumulated_density += density * step_size;
             
             // Early exit if transparency is very low
-            if (accumulated_transparency < 0.01) {
-                break;
-            }
+            //if (accumulated_transparency < 0.01) {
+                //break;
+            //} Idk if this is worth keeping yet.
         }
         
         // Step along the ray
@@ -102,9 +113,13 @@ void fragment() {
     }
     
     // Calculate final color based on accumulated density
-    float final_intensity = 1.0 - accumulated_transparency;
-    final_intensity = clamp(final_intensity * density_multiplier * brightness, 0.0, 1.0);
+    //float final_intensity = 1.0 - accumulated_transparency;
+    //final_intensity = clamp(final_intensity * density_multiplier * brightness, 0.0, 1.0);
     
+    // Pure additive intensity - can blow out to white
+    float final_intensity = accumulated_density * density_multiplier * brightness;
+    // Remove clamp to allow blow-out for X-ray effect
+    // final_intensity = clamp(final_intensity, 0.0, 1.0);    
     // Output color - white for the volume, transparent background
     ALBEDO = vec3(final_intensity);
     ALPHA = final_intensity;

@@ -1,7 +1,10 @@
-[gd_scene load_steps=3 format=3 uid="uid://b1pjrpiec08nj"]
+[gd_scene load_steps=4 format=3 uid="uid://b1pjrpiec08nj"]
 
 [ext_resource type="Script" uid="uid://cc5kw5y6f5npl" path="res://3d_texture_visualizer_1/volume_3d_viewer_controller.gd" id="1_controller"]
 [ext_resource type="Script" uid="uid://jf74gi6c0wta" path="res://3d_texture_visualizer_1/volume_3d_ui_overlay.gd" id="2_ui_overlay"]
+
+[sub_resource type="Environment" id="Environment_6xq0q"]
+ambient_light_source = 2
 
 [node name="Volume3DViewer" type="Node3D"]
 script = ExtResource("1_controller")
@@ -43,3 +46,6 @@ autowrap_mode = 2
 
 [node name="Parameters" type="VBoxContainer" parent="UIOverlay/VBoxContainer"]
 layout_mode = 2
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_6xq0q")

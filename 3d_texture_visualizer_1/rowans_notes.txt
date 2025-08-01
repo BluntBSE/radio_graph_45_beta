@@ -1,0 +1,591 @@
+ROWAN'S SHADER MATH NOTES
+=========================
+
+These are questions and explanations from developing the 3D volume rendering shader.
+
+---
+
+Q: Explain to me how this line works: POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+
+A: That line is performing the standard 3D graphics pipeline transformation to convert a vertex from local object space to screen space. Let me break it down step by step:
+
+## The Transformation Pipeline
+
+```glsl
+POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+```
+
+This is doing **3 consecutive transformations**:
+
+### 1. Local to World Space
+```glsl
+vec4(VERTEX, 1.0)
+```
+- `VERTEX` is the vertex position in **local object space** (relative to the mesh center)
+- Adding `1.0` as the 4th component creates a **homogeneous coordinate** (x, y, z, w)
+- The `w=1.0` means this is a **position** (not a direction vector which would have w=0)
+
+### 2. World to Camera Space
+```glsl
+MODELVIEW_MATRIX * vec4(VERTEX, 1.0)
+```
+- `MODELVIEW_MATRIX` combines:
+  - **Model Matrix**: Transforms from object space to world space (object's position, rotation, scale)
+  - **View Matrix**: Transforms from world space to camera space (camera's position, rotation)
+- This gives us the vertex position **relative to the camera**
+
+### 3. Camera to Screen Space
+```glsl
+PROJECTION_MATRIX * (previous result)
+```
+- `PROJECTION_MATRIX` handles:
+  - **Perspective projection**: Makes distant objects smaller
+  - **Field of view**: How wide the camera sees
+  - **Near/far clipping**: What depth range is visible
+  - **Viewport mapping**: Converts to normalized device coordinates [-1,1]
+
+## Why This Specific Order?
+
+The matrices **must** be applied right-to-left because matrix multiplication isn't commutative:
+
+1. **VERTEX** → Object space coordinates
+2. **MODEL** → World space coordinates  
+3. **VIEW** → Camera space coordinates
+4. **PROJECTION** → Screen space coordinates
+
+---
+
+Q: What the heck is ray_box_intersection doing? It looks like it's setting up a 1x1 world coordinate cube? But why? How did you determine that and how do we know that the texture3D will fit in that space?
+
+A: Great question! Let me break down what `ray_box_intersection` is doing and why it works:
+
+## What `ray_box_intersection` Does
+
+This function calculates **where a ray enters and exits a 3D box**. It's implementing the classic "slab method" for ray-AABB (Axis-Aligned Bounding Box) intersection.
+
+### The Math:
+```glsl
+vec3 box_min = vec3(-1.0);  // Corner at (-1, -1, -1)
+vec3 box_max = vec3(1.0);   // Corner at (1, 1, 1)
+```
+
+This creates a **2x2x2 cube** centered at the origin in **local object space**.
+
+### Why This Size?
+
+Remember in your GDScript setup:
+```gdscript
+var box_mesh = BoxMesh.new()
+box_mesh.size = Vector3(2, 2, 2)  # 2x2x2 cube centered at origin
+```
+
+A `BoxMesh` with size `(2,2,2)` has vertices that go from **-1 to +1** in each axis. So the shader's box bounds **exactly match** the mesh geometry!
+
+## The Coordinate System Chain
+
+Here's the brilliant part - there are **3 coordinate spaces** at play:
+
+### 1. Mesh/Local Space: [-1, +1]
+- Your cube mesh vertices range from -1 to +1
+- The ray intersection happens in this space
+- `ray_box_intersection` uses `vec3(-1.0)` to `vec3(1.0)`
+
+### 2. Texture Space: [0, 1]
+- Your 3D texture coordinates go from 0 to 1
+- The conversion happens in `sample_volume()`:
+```glsl
+vec3 tex_coord = pos * 0.5 + 0.5;  // Convert [-1,1] to [0,1]
+```
+
+### 3. World Space: [wherever you want]
+- The cube can be positioned anywhere in your 3D scene
+- The `MODEL_MATRIX` handles this transformation
+
+## Why This Works Perfectly
+
+1. **Mesh bounds = Volume bounds**: The cube mesh defines exactly where the volume should be rendered
+2. **Automatic scaling**: If you scale the mesh to `(4,4,4)`, the volume automatically scales too
+3. **Simple mapping**: The linear transformation from [-1,1] to [0,1] preserves the volume structure
+
+---
+
+Q: Don't change any code on disk. I'm tinkering with the volume viewer shader. I notice a few artifacts. Specifically, when I view the six pointed cross from a diagonal angle (such that I see two planes, both vertically aligned to me, intersecting), there is sort of a hollow space in the middle of the object instead of a filled one or even darkened space. Why?
+
+A: That's a classic volume rendering artifact! The "hollow space" you're seeing is likely caused by **step size issues** and **sampling alignment** problems in your ray-marching algorithm. Here's what's happening:
+
+## Root Cause: Ray-Marching Sampling
+
+When viewing the cross diagonally, rays pass through:
+1. **First cross plane** (e.g., XY cross)
+2. **Empty space** in the middle
+3. **Second cross plane** (e.g., XZ cross)
+
+The hollow appears because:
+
+### 1. Step Size Too Large
+- Your rays might be "jumping over" voxels in the intersection area
+- The step size (`0.01` by default) might be too coarse for the cross thickness
+- When viewing diagonally, the effective sampling distance through the volume changes
+
+### 2. Intersection Logic
+Your texture generator creates the cross with:
+```gdscript
+if xy_cross or xz_cross:
+    # Only one cross contributes to intensity
+```
+
+But in the **intersection area** where both crosses overlap, you might expect **additive density** or **maximum density**, not just the minimum distance calculation.
+
+### 3. Anti-Aliasing Interference
+The `smoothstep()` and distance-based intensity in your generator might be creating "soft edges" that, when ray-marched, appear as gaps rather than solid material.
+
+---
+
+Q: I've narrowed down the issue with the illusion of parts of the cross disappearing. When I see two planes like, one in front of the other, it is almost as if the back plane is subtracted from the front plane. Why?
+
+A: Ah! You're encountering a classic **volume rendering depth/blending issue**. The problem is likely in how your shader handles **overlapping densities** and **transparency accumulation**.
+
+## The Root Cause:
+
+When ray-marching through overlapping cross planes, your shader is probably **over-subtracting** transparency. Here's what happens:
+
+### Current Logic (Problematic):
+```glsl
+float absorption = density * absorption_coefficient * step_size;
+accumulated_transparency *= exp(-absorption);
+```
+
+When a ray hits **both cross planes**:
+1. **First plane**: `accumulated_transparency = 1.0 * exp(-absorption1)`
+2. **Gap**: No density, transparency stays the same
+3. **Second plane**: `accumulated_transparency *= exp(-absorption2)`
+
+The **multiplication** means the second plane makes things MORE transparent, not less!
+
+## Why This Looks Like Subtraction:
+
+- **Single plane**: `transparency = exp(-absorption)` → looks solid
+- **Two planes**: `transparency = exp(-absorption1) * exp(-absorption2) = exp(-(absorption1 + absorption2))` → looks MORE transparent than expected
+
+## The Fix:
+
+You need to **accumulate absorption differently**:
+
+```glsl
+// Instead of:
+accumulated_transparency *= exp(-absorption);
+
+// Try:
+total_absorption += absorption;
+// Then at the end:
+accumulated_transparency = exp(-total_absorption);
+```
+
+Or modify your cross generation to ensure **intersection areas have MAXIMUM density**, not blended density.
+
+---
+
+Q: What do I have to do to make this purely additive, always? Such that if I look through several cross planes, it just gets extra dark?
+
+A: Perfect! To make it purely **additive** (where more material = darker, never lighter), you need to change the absorption accumulation in your shader.
+
+## Change This Logic:
+
+Instead of the current exponential absorption model:
+```glsl
+// Current (exponential - causes subtraction effect):
+accumulated_transparency *= exp(-absorption);
+```
+
+Use **simple additive accumulation**:
+```glsl
+// Simple additive (always gets darker):
+accumulated_density += density * step_size;
+```
+
+## Full Fragment Shader Changes:
+
+Replace your ray-marching loop with this approach:
+
+```glsl
+// Ray marching
+float accumulated_density = 0.0;
+vec3 current_pos = ray_start;
+float t = t_start;
+
+for (int i = 0; i < max_steps; i++) {
+    if (t > t_far) break;
+    
+    // Sample the volume
+    float density = sample_volume(current_pos);
+    
+    if (density > 0.0) {
+        // Simple additive accumulation
+        accumulated_density += density * step_size;
+    }
+    
+    // Step along the ray
+    t += step_size;
+    current_pos = local_camera_pos + ray_dir * t;
+}
+
+// Simple linear mapping (no exponentials)
+float final_intensity = clamp(accumulated_density * density_multiplier * brightness, 0.0, 1.0);
+
+// Output color
+ALBEDO = vec3(final_intensity);
+ALPHA = final_intensity;
+```
+
+## What This Does:
+
+- **Single cross plane**: Gets density X
+- **Two cross planes**: Gets density X + Y (always darker)
+- **Three cross planes**: Gets density X + Y + Z (even darker)
+
+No more exponential absorption = no more "subtraction" effect. Each plane just adds to the darkness linearly!
+
+---
+
+Q: I can probably apply beer's law to that accumulated density AFTER accumulating it, right? I do like the effect it produces and it's pretty accurate (that's that exponential thing you've added, right?)
+
+A: **Absolutely!** You've got the right idea. Beer's Law is indeed that exponential absorption model, and applying it **after** accumulation gives you the best of both worlds:
+
+## The Perfect Approach:
+
+```glsl
+// Step 1: Pure additive accumulation (no subtraction artifacts)
+float total_density = 0.0;
+
+for (int i = 0; i < max_steps; i++) {
+    // ... ray marching ...
+    if (density > 0.0) {
+        total_density += density * step_size;  // Simple addition
+    }
+}
+
+// Step 2: Apply Beer's Law to the total
+float beer_absorption = total_density * absorption_coefficient;
+float final_transparency = exp(-beer_absorption);
+float final_intensity = (1.0 - final_transparency) * density_multiplier * brightness;
+```
+
+## Why This Works Better:
+
+### During Accumulation:
+- **Two cross planes**: `total_density = density1 + density2` (additive, no artifacts)
+- **Three cross planes**: `total_density = density1 + density2 + density3` (always darker)
+
+### After Accumulation (Beer's Law):
+- **Low density**: `exp(-small_number)` ≈ linear response
+- **High density**: `exp(-large_number)` ≈ saturates nicely toward black
+- **Physical accuracy**: Matches real X-ray attenuation
+
+## The Result:
+- ✅ No "subtraction" artifacts during ray-marching
+- ✅ Physically accurate final intensity
+- ✅ Nice saturation behavior for thick materials
+- ✅ Multiple overlapping structures just get progressively darker
+
+You get clean accumulation with realistic final rendering!
+
+---
+
+Q: In the functions here, what does "t" stand for?
+
+A: In the volume rendering shader functions, **"t"** stands for the **parametric distance along a ray**.
+
+## Ray Parametric Equation:
+
+A ray is defined as:
+```glsl
+position = ray_origin + t * ray_direction
+```
+
+Where:
+- **t = 0**: You're at the ray origin (camera position)
+- **t = 1**: You're 1 unit away from the origin along the ray direction
+- **t = 5.5**: You're 5.5 units away from the origin
+
+## In Your Volume Shader:
+
+- **`t_near`**: Distance from camera to where ray **enters** the volume box
+- **`t_far`**: Distance from camera to where ray **exits** the volume box
+- **`t_start`**: Where to start ray-marching (usually same as `t_near`)
+- **`t`** (in the loop): Current distance along the ray during marching
+
+## Example:
+If your camera is at `(0, 0, 5)` looking toward a cube at origin:
+- **t_near = 4.0**: Ray enters cube at distance 4 from camera
+- **t_far = 6.0**: Ray exits cube at distance 6 from camera
+- **Ray-marching**: Steps from t=4.0 to t=6.0, sampling the volume
+
+## Why "t"?
+It's standard mathematical notation for a **parameter** in parametric equations. Think of it as "time" if the ray was moving through space, or simply "distance traveled along the ray."
+
+The `t` values let you convert between "how far along the ray" and "actual 3D position in the volume."
+
+---
+
+Q: So what's 't1' and t2' here? 
+
+```glsl
+bool ray_box_intersection(vec3 ray_origin, vec3 ray_dir, out float t_near, out float t_far) {
+    // Box bounds in local space
+    vec3 box_min = vec3(-1.0);
+    vec3 box_max = vec3(1.0);
+    //T == distance? Basically? 
+    vec3 inv_dir = 1.0 / ray_dir;
+    vec3 t1 = (box_min - ray_origin) * inv_dir;
+    vec3 t2 = (box_max - ray_origin) * inv_dir;
+    
+    vec3 t_min = min(t1, t2);
+    vec3 t_max = max(t1, t2);
+    
+    t_near = max(max(t_min.x, t_min.y), t_min.z);
+    t_far = min(min(t_max.x, t_max.y), t_max.z);
+    
+    return t_far > 0.0 && t_near < t_far;
+}
+```
+
+A: Great question! **`t1`** and **`t2`** are the **distances where the ray intersects each pair of parallel box faces**.
+
+## The Slab Method Explained:
+
+A 3D box can be thought of as **3 pairs of parallel "slabs"**:
+- **X-slabs**: Left face (x = -1) and right face (x = +1)
+- **Y-slabs**: Bottom face (y = -1) and top face (y = +1)  
+- **Z-slabs**: Front face (z = -1) and back face (z = +1)
+
+## What t1 and t2 Represent:
+
+```glsl
+vec3 t1 = (box_min - ray_origin) * inv_dir;  // Distance to "min" faces
+vec3 t2 = (box_max - ray_origin) * inv_dir;  // Distance to "max" faces
+```
+
+- **`t1.x`**: Distance to left face (x = -1)
+- **`t2.x`**: Distance to right face (x = +1)
+- **`t1.y`**: Distance to bottom face (y = -1)
+- **`t2.y`**: Distance to top face (y = +1)
+- **`t1.z`**: Distance to front face (z = -1)
+- **`t2.z`**: Distance to back face (z = +1)
+
+## Why min/max?
+
+```glsl
+vec3 t_min = min(t1, t2);  // Distance to "entry" face for each axis
+vec3 t_max = max(t1, t2);  // Distance to "exit" face for each axis
+```
+
+Depending on ray direction, you might hit the "max" face before the "min" face! The `min/max` ensures:
+- **`t_min`**: Always the **closer** face for each axis
+- **`t_max`**: Always the **farther** face for each axis
+
+## Final Result:
+
+```glsl
+t_near = max(t_min.x, t_min.y, t_min.z);  // Latest entry point
+t_far = min(t_max.x, t_max.y, t_max.z);   // Earliest exit point
+```
+
+The ray is **inside the box** between `t_near` and `t_far`!
+
+---
+
+Q: And what does 1.0 / ray_dir give us? It's inv_dir here. Surely that's not just...flipping the direction? Wouldn't that be multiplying it by -1?
+
+A: You're absolutely right to question this! **`1.0 / ray_dir`** is NOT flipping the direction - it's creating the **multiplicative inverse** of each component.
+
+## What `inv_dir` Actually Is:
+
+```glsl
+vec3 ray_dir = vec3(2.0, 0.5, -4.0);
+vec3 inv_dir = 1.0 / ray_dir;  // vec3(0.5, 2.0, -0.25)
+```
+
+- **ray_dir.x = 2.0** → **inv_dir.x = 0.5**
+- **ray_dir.y = 0.5** → **inv_dir.y = 2.0**  
+- **ray_dir.z = -4.0** → **inv_dir.z = -0.25**
+
+## Why Do This?
+
+It's a **mathematical optimization trick**. The ray-box intersection needs to solve:
+
+```
+ray_origin + t * ray_dir = box_face_position
+```
+
+Rearranging for `t`:
+```
+t = (box_face_position - ray_origin) / ray_dir
+```
+
+## The Optimization:
+
+Instead of doing **division** (expensive) for each face:
+```glsl
+float t = (box_min.x - ray_origin.x) / ray_dir.x;  // Division every time
+```
+
+Pre-compute the **inverse** once, then use **multiplication** (cheap):
+```glsl
+vec3 inv_dir = 1.0 / ray_dir;                      // Division once
+float t = (box_min.x - ray_origin.x) * inv_dir.x;  // Multiplication (faster)
+```
+
+## Direction vs. Inverse:
+
+- **Flipping direction**: `ray_dir * -1.0` → `vec3(-2.0, -0.5, 4.0)`
+- **Multiplicative inverse**: `1.0 / ray_dir` → `vec3(0.5, 2.0, -0.25)`
+
+The inverse preserves the **sign** but gives you the reciprocal of each component!
+
+---
+
+Q: How can t1 and t2 contain information about all the faces? If box min is like a corner off in the negative points of space, and box max is another corner, and I raycast, I'm not guaranteed to hit every face along the way, am I?
+
+A: Excellent question! You're thinking about this correctly, but there's a subtle distinction here.
+
+## `t1` and `t2` DON'T represent "hitting faces"
+
+They represent **distances to intersect the PLANES that contain those faces**, extended infinitely in both directions.
+
+## What's Actually Happening:
+
+```glsl
+vec3 t1 = (box_min - ray_origin) * inv_dir;
+vec3 t2 = (box_max - ray_origin) * inv_dir;
+```
+
+This calculates:
+- **`t1.x`**: Distance to the **infinite plane** where `x = box_min.x` (-1.0)
+- **`t2.x`**: Distance to the **infinite plane** where `x = box_max.x` (+1.0)
+- **`t1.y`**: Distance to the **infinite plane** where `y = box_min.y` (-1.0)
+- **`t2.y`**: Distance to the **infinite plane** where `y = box_max.y` (+1.0)
+- etc.
+
+## Key Insight:
+
+Every ray **will** intersect these 6 infinite planes (unless parallel). The question is **which intersections are actually inside the box**.
+
+## Example:
+
+Ray shooting diagonally might intersect planes in this order:
+1. **`x = -1` plane** at distance `t1.x = 2.0`
+2. **`y = -1` plane** at distance `t1.y = 3.5`  
+3. **`z = +1` plane** at distance `t2.z = 4.2`
+4. **`x = +1` plane** at distance `t2.x = 6.0`
+5. **`y = +1` plane** at distance `t2.y = 7.1`
+6. **`z = -1` plane** at distance `t1.z = 8.0`
+
+## The min/max Logic:
+
+```glsl
+t_near = max(t_min.x, t_min.y, t_min.z);  // Latest entry = 3.5
+t_far = min(t_max.x, t_max.y, t_max.z);   // Earliest exit = 4.2
+```
+
+Only the region between `t = 3.5` and `t = 4.2` is **actually inside the box**!
+
+You're right that you don't hit every **face**, but you do cross every **plane**.
+
+---
+
+---
+
+Q: How does this work? I'm especially curious about the use of any()
+
+```glsl
+float sample_volume(vec3 pos) {
+    // Convert from local space [-1,1] to texture space [0,1]
+    vec3 tex_coord = pos * 0.5 + 0.5;
+    
+    // Ensure position is in [0,1] range
+    if (any(lessThan(tex_coord, vec3(0.0))) || any(greaterThan(tex_coord, vec3(1.0)))) {
+        return 0.0;
+    }
+    
+    return texture(volume_texture, tex_coord).r;
+}
+```
+
+A: Great question! Let me break down the `sample_volume` function, especially the `any()` usage:
+
+## The Function Purpose
+This function samples the 3D texture at a given position, with bounds checking to prevent invalid sampling.
+
+## Step 1: Coordinate Conversion
+```glsl
+vec3 tex_coord = pos * 0.5 + 0.5;
+```
+This converts from **local mesh space** [-1,1] to **texture space** [0,1]:
+- `pos = (-1, -1, -1)` → `tex_coord = (0, 0, 0)`
+- `pos = (0, 0, 0)` → `tex_coord = (0.5, 0.5, 0.5)` 
+- `pos = (1, 1, 1)` → `tex_coord = (1, 1, 1)`
+
+## Step 2: Bounds Checking with `any()`
+```glsl
+if (any(lessThan(tex_coord, vec3(0.0))) || any(greaterThan(tex_coord, vec3(1.0)))) {
+    return 0.0;
+}
+```
+
+### What `any()` Does:
+`any()` returns `true` if **ANY** component of a boolean vector is `true`.
+
+### Breaking It Down:
+```glsl
+lessThan(tex_coord, vec3(0.0))  // Returns bvec3(bool, bool, bool)
+```
+This compares **each component** of `tex_coord` with 0.0:
+- If `tex_coord = (-0.1, 0.5, 0.3)` → returns `bvec3(true, false, false)`
+- If `tex_coord = (0.2, 0.8, 0.6)` → returns `bvec3(false, false, false)`
+
+```glsl
+any(lessThan(tex_coord, vec3(0.0)))
+```
+Returns `true` if **any** component is less than 0.0.
+
+### The Full Condition:
+```glsl
+any(lessThan(tex_coord, vec3(0.0))) || any(greaterThan(tex_coord, vec3(1.0)))
+```
+
+This returns `true` if:
+- **ANY** component < 0.0 **OR**
+- **ANY** component > 1.0
+
+## Why This Matters:
+3D texture sampling **only works** in the range [0,1]. Outside this range:
+- Some GPUs return undefined values
+- Others might clamp or wrap
+- Could cause visual artifacts
+
+## Example:
+```glsl
+tex_coord = (0.5, -0.1, 1.2)
+lessThan(tex_coord, vec3(0.0)) = bvec3(false, true, false)
+any(...) = true  // Because Y component < 0
+greaterThan(tex_coord, vec3(1.0)) = bvec3(false, false, true) 
+any(...) = true  // Because Z component > 1
+// Result: return 0.0 (safe fallback)
+```
+
+So `any()` is a concise way to check if **any coordinate is out of bounds**!
+
+---
+
+## Summary
+
+These shader math concepts all work together to create efficient 3D volume rendering:
+
+1. **Coordinate transformations** move vertices from object space to screen space
+2. **Ray-box intersection** finds where rays enter/exit the volume bounds  
+3. **Ray marching** samples the volume texture along each ray
+4. **Beer's Law absorption** creates realistic density effects
+5. **Optimization tricks** like pre-computing inverses keep it fast
+6. **Bounds checking** with `any()` prevents invalid texture sampling
+
+The key insight is that volume rendering treats a simple cube mesh as a "container" for 3D texture data, using mathematical ray tracing to sample and display the volume contents.

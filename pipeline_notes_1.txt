@@ -1,0 +1,27 @@
+The Transformation Pipeline
+This is doing 3 consecutive transformations:
+
+1. Local to World Space
+VERTEX is the vertex position in local object space (relative to the mesh center)
+Adding 1.0 as the 4th component creates a homogeneous coordinate (x, y, z, w)
+The w=1.0 means this is a position (not a direction vector which would have w=0)
+2. World to Camera Space
+MODELVIEW_MATRIX combines:
+Model Matrix: Transforms from object space to world space (object's position, rotation, scale)
+View Matrix: Transforms from world space to camera space (camera's position, rotation)
+This gives us the vertex position relative to the camera
+3. Camera to Screen Space
+PROJECTION_MATRIX handles:
+Perspective projection: Makes distant objects smaller
+Field of view: How wide the camera sees
+Near/far clipping: What depth range is visible
+Viewport mapping: Converts to normalized device coordinates [-1,1]
+Why This Specific Order?
+The matrices must be applied right-to-left because matrix multiplication isn't commutative:
+
+VERTEX → Object space coordinates
+MODEL → World space coordinates
+VIEW → Camera space coordinates
+PROJECTION → Screen space coordinates
+In Your Volume Shader Context
+For your volume rendering, this line is positioning each vertex of the cube mesh that represents the volume bounds. The cube vertices get transformed so that:
